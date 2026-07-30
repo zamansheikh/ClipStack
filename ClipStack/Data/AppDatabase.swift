@@ -57,6 +57,17 @@ final class AppDatabase {
             }
         }
 
+        migrator.registerMigration("v3") { db in
+            // External-content FTS5 index over clip text + source app name,
+            // kept in sync with triggers and populated from existing rows.
+            try db.create(virtualTable: "clip_fts", using: FTS5()) { t in
+                t.synchronize(withTable: "clip")
+                t.tokenizer = .unicode61()
+                t.column("textContent")
+                t.column("sourceName")
+            }
+        }
+
         return migrator
     }
 
@@ -138,6 +149,64 @@ final class AppDatabase {
             let all = try request.fetchAll(db)
             try request.deleteAll(db)
             return all
+        }
+    }
+
+    /// Delete unpinned history of specific kinds only (e.g. all images).
+    /// Returns deleted clips so blob files can be cleaned up.
+    func clearHistory(kinds: [ClipKind]) throws -> [Clip] {
+        try dbQueue.write { db in
+            let request = Clip
+                .filter(Column("pinboardId") == nil)
+                .filter(Column("pinnedAt") == nil)
+                .filter(kinds.map(\.rawValue).contains(Column("kind")))
+            let all = try request.fetchAll(db)
+            try request.deleteAll(db)
+            return all
+        }
+    }
+
+    /// Full-text search over content and source app (FTS5, prefix matching).
+    /// Returns nil when the query can't form a valid FTS pattern.
+    func search(matching query: String) throws -> [Clip]? {
+        guard let pattern = FTS5Pattern(matchingAllPrefixesIn: query) else { return nil }
+        return try dbQueue.read { db in
+            try Clip.fetchAll(
+                db,
+                sql: """
+                SELECT clip.*
+                FROM clip
+                JOIN clip_fts ON clip_fts.rowid = clip.rowid
+                WHERE clip_fts MATCH ?
+                ORDER BY clip.lastUsedAt DESC
+                LIMIT 300
+                """,
+                arguments: [pattern]
+            )
+        }
+    }
+
+    /// Save an edited text body (edit-before-paste). Editing an RTF clip
+    /// demotes it to plain text since the rich data no longer matches.
+    func updateText(id: String, text: String) throws {
+        try dbQueue.write { db in
+            guard var clip = try Clip.fetchOne(db, key: id) else { return }
+            clip.textContent = text
+            clip.byteSize = text.utf8.count
+            if clip.kind == .rtf {
+                if let path = clip.dataPath { try? FileManager.default.removeItem(atPath: path) }
+                clip.dataPath = nil
+                clip.kind = .text
+            }
+            clip.contentHash = BlobStore.sha256("text:" + text)
+            do {
+                try clip.update(db)
+            } catch {
+                // Edited content now duplicates another clip's hash — keep a
+                // synthetic unique hash rather than failing the save.
+                clip.contentHash = "edited:" + clip.id
+                try clip.update(db)
+            }
         }
     }
 

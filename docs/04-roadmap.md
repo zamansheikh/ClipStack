@@ -34,10 +34,13 @@ dogfooding it yourself is the fastest way to find what matters.
 - [x] Time-based retention — auto-delete unpinned clips after 1 h…1 month.
 - [x] Per-clip delete (hover trash button, context menu, ⌘⌫).
 - [x] Quick paste `⌘1…⌘9` in overlay.
-- [x] `Space` preview. *(Edit-before-paste still TBD.)*
-- [ ] FTS5 full-text search *(type filter chips done)*.
+- [x] `Space` preview + edit-before-paste (text clips editable in preview).
+- [x] FTS5 full-text search (whole DB, prefix matching) + type filter chips.
+- [x] Category-based clear (Settings → Clear by Category: text/links/images/files).
+- [x] App icon (generated asset catalog).
 - [ ] Multi-select paste stack *(drag-out done)*.
-- [ ] App icon, polish pass, Developer ID signing + notarization.
+- [ ] Named pinboards (tabs, reorder).
+- [ ] Polish pass, Developer ID signing + notarization.
 
 **Exit criteria:** a Paste user switching over misses nothing important on Mac.
 

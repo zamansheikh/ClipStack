@@ -21,6 +21,17 @@ built from scratch, no subscription.
 
 🔨 Phase 1 (MVP) — core loop implemented: capture → store → overlay → paste.
 
+## Install (download)
+
+1. Grab the latest `ClipStack-x.y.z.zip` from [Releases](https://github.com/zamansheikh/ClipStack/releases), unzip, and move **ClipStack.app** to **Applications**.
+2. This build isn't notarized by Apple yet, so macOS will refuse to open it ("Move to Trash" dialog). Paste this one command in **Terminal** and hit Enter, then open the app normally:
+
+```sh
+xattr -d com.apple.quarantine /Applications/ClipStack.app
+```
+
+3. Press `⌘⇧V` to open your clipboard history. Grant the Accessibility permission if you want items to paste directly into other apps.
+
 ## Building
 
 Requires Xcode 16+ and [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`).

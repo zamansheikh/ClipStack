@@ -8,7 +8,7 @@ struct OverlayView: View {
         VStack(spacing: 10) {
             topBar
             if let previewClip = viewModel.previewClip {
-                ClipPreviewPane(clip: previewClip)
+                ClipPreviewPane(clip: previewClip, viewModel: viewModel)
             } else {
                 cardRow
             }
@@ -148,9 +148,11 @@ struct OverlayView: View {
 }
 
 /// Large preview shown when pressing Space on a card (arrows still navigate,
-/// Return pastes, Space/Esc closes).
+/// Return pastes, Space/Esc closes). Text clips can be edited in place.
 struct ClipPreviewPane: View {
     let clip: Clip
+    @ObservedObject var viewModel: OverlayViewModel
+    @State private var draft = ""
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -163,16 +165,27 @@ struct ClipPreviewPane: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    private var isTextEditable: Bool {
+        clip.kind == .text || clip.kind == .rtf
+    }
+
     @ViewBuilder
     private var previewContent: some View {
         switch clip.kind {
         case .text, .rtf, .url, .color:
-            ScrollView {
-                Text(clip.textContent ?? "")
+            if isTextEditable, viewModel.isEditingPreview {
+                TextEditor(text: $draft)
                     .font(.body)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-                    .padding(12)
+                    .scrollContentBackground(.hidden)
+                    .padding(8)
+            } else {
+                ScrollView {
+                    Text(clip.textContent ?? "")
+                        .font(.body)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                        .padding(12)
+                }
             }
         case .image:
             if let path = clip.dataPath ?? clip.previewPath,
@@ -234,9 +247,30 @@ struct ClipPreviewPane: View {
                 Text(clip.kind.rawValue.capitalized)
             }
             Spacer()
-            Text("space or esc to go back")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
+            if viewModel.isEditingPreview {
+                HStack {
+                    Button("Cancel") {
+                        viewModel.isEditingPreview = false
+                    }
+                    Button("Save") {
+                        viewModel.saveEditedText(draft)
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                Text("edited text pastes with ↩")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            } else {
+                if isTextEditable {
+                    Button("Edit Text") {
+                        draft = clip.textContent ?? ""
+                        viewModel.isEditingPreview = true
+                    }
+                }
+                Text("space or esc to go back")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
         }
         .font(.caption)
         .padding(.vertical, 4)

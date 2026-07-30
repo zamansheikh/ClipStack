@@ -79,6 +79,16 @@ final class OverlayPanelController {
 
     /// Returns nil when the event was consumed.
     private func handle(_ event: NSEvent) -> NSEvent? {
+        // While the preview's text editor is active, all keys belong to it —
+        // except Esc, which cancels editing.
+        if viewModel.isEditingPreview {
+            if event.keyCode == 53 {
+                viewModel.isEditingPreview = false
+                return nil
+            }
+            return event
+        }
+
         let command = event.modifierFlags.contains(.command)
         let shiftOrOption = !event.modifierFlags.intersection([.shift, .option]).isEmpty
 
@@ -105,7 +115,7 @@ final class OverlayPanelController {
         switch event.keyCode {
         case 53: // Esc — close preview first, then the overlay
             if viewModel.previewClip != nil {
-                viewModel.previewClip = nil
+                viewModel.closePreview()
             } else {
                 hide()
             }

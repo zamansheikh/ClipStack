@@ -33,6 +33,10 @@ final class OverlayViewModel: ObservableObject {
     @Published var focusToken = 0
     /// Non-nil while the large Space preview is open.
     @Published var previewClip: Clip?
+    /// True while the preview's text editor is active (keyboard nav suspended).
+    @Published var isEditingPreview = false
+    /// FTS results for the current search; nil when not searching.
+    @Published private(set) var searchResults: [Clip]?
 
     let clipStore: ClipStore
     private let pasteService: PasteService
@@ -54,7 +58,11 @@ final class OverlayViewModel: ObservableObject {
             .store(in: &cancellables)
 
         $searchText
-            .sink { [weak self] _ in self?.selectedIndex = 0 }
+            .removeDuplicates()
+            .sink { [weak self] text in
+                self?.selectedIndex = 0
+                self?.runSearch(text)
+            }
             .store(in: &cancellables)
         $filter
             .sink { [weak self] _ in self?.selectedIndex = 0 }
@@ -62,21 +70,35 @@ final class OverlayViewModel: ObservableObject {
     }
 
     var filteredClips: [Clip] {
-        // The Pinned tab reads the dedicated (unwindowed) pinned list, so old
-        // pins never disappear from it.
-        var clips = filter == .pinned
-            ? clipStore.pinnedClips
-            : clipStore.clips.filter { filter.matches($0) }
-        let query = searchText.trimmingCharacters(in: .whitespaces).lowercased()
-        if !query.isEmpty {
-            // Prefix + substring search over content and source app (FTS5 later).
-            clips = clips.filter { clip in
-                (clip.textContent?.lowercased().contains(query) ?? false)
-                    || (clip.sourceName?.lowercased().contains(query) ?? false)
-                    || clip.kind.rawValue.contains(query)
+        let base: [Clip]
+        if let searchResults {
+            // FTS results span the whole database, not just the 500-row window.
+            base = searchResults
+        } else if filter == .pinned {
+            // Dedicated (unwindowed) pinned list, so old pins never drop out.
+            base = clipStore.pinnedClips
+        } else {
+            base = clipStore.clips
+        }
+        return filter == .all ? base : base.filter { filter.matches($0) }
+    }
+
+    private func runSearch(_ text: String) {
+        let query = text.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else {
+            searchResults = nil
+            return
+        }
+        if let results = (try? database.search(matching: query)) ?? nil {
+            searchResults = results
+        } else {
+            // Query couldn't form an FTS pattern — fall back to substring scan.
+            let lowered = query.lowercased()
+            searchResults = clipStore.clips.filter { clip in
+                (clip.textContent?.lowercased().contains(lowered) ?? false)
+                    || (clip.sourceName?.lowercased().contains(lowered) ?? false)
             }
         }
-        return clips
     }
 
     var selectedClip: Clip? {
@@ -89,8 +111,27 @@ final class OverlayViewModel: ObservableObject {
         searchText = ""
         filter = .all
         selectedIndex = 0
-        previewClip = nil
+        closePreview()
         focusToken += 1
+    }
+
+    func closePreview() {
+        previewClip = nil
+        isEditingPreview = false
+    }
+
+    /// Save an edit made in the preview pane (edit-before-paste).
+    func saveEditedText(_ text: String) {
+        guard let clip = previewClip else { return }
+        try? database.updateText(id: clip.id, text: text)
+        var updated = clip
+        updated.textContent = text
+        if updated.kind == .rtf {
+            updated.kind = .text
+            updated.dataPath = nil
+        }
+        previewClip = updated
+        isEditingPreview = false
     }
 
     func moveSelection(by delta: Int) {
@@ -104,7 +145,11 @@ final class OverlayViewModel: ObservableObject {
     }
 
     func togglePreview() {
-        previewClip = previewClip == nil ? selectedClip : nil
+        if previewClip == nil {
+            previewClip = selectedClip
+        } else {
+            closePreview()
+        }
     }
 
     func pasteSelected(plainText: Bool = false) {
@@ -141,7 +186,7 @@ final class OverlayViewModel: ObservableObject {
     }
 
     func delete(_ clip: Clip) {
-        if previewClip?.id == clip.id { previewClip = nil }
+        if previewClip?.id == clip.id { closePreview() }
         if let deleted = try? database.delete(id: clip.id) {
             BlobStore.deleteFiles(for: [deleted])
         }

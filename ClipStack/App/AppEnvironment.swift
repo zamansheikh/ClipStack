@@ -66,4 +66,10 @@ final class AppEnvironment {
             BlobStore.deleteFiles(for: deleted)
         }
     }
+
+    func clearHistory(kinds: [ClipKind]) {
+        if let deleted = try? database.clearHistory(kinds: kinds) {
+            BlobStore.deleteFiles(for: deleted)
+        }
+    }
 }
