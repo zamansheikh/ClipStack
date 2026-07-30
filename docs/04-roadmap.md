@@ -38,8 +38,9 @@ dogfooding it yourself is the fastest way to find what matters.
 - [x] FTS5 full-text search (whole DB, prefix matching) + type filter chips.
 - [x] Category-based clear (Settings → Clear by Category: text/links/images/files).
 - [x] App icon (generated asset catalog).
-- [ ] Multi-select paste stack *(drag-out done)*.
-- [ ] Named pinboards (tabs, reorder).
+- [x] Multi-select paste stack (⌘-click cards, ↩ pastes sequentially).
+- [x] Named pinboards (tabs in overlay, create/rename/reorder/delete,
+      move clips via context menu, Tab key cycles).
 - [ ] Polish pass, Developer ID signing + notarization.
 
 **Exit criteria:** a Paste user switching over misses nothing important on Mac.
