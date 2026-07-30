@@ -25,6 +25,11 @@ struct Clip: Identifiable, Equatable, Codable, FetchableRecord, PersistableRecor
     var createdAt: Date
     var lastUsedAt: Date
     var pinboardId: String?
+    var pinnedAt: Date?
+}
+
+extension Clip {
+    var isPinned: Bool { pinnedAt != nil }
 }
 
 extension Clip {

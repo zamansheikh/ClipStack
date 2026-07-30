@@ -28,12 +28,15 @@ dogfooding it yourself is the fastest way to find what matters.
 
 ## Phase 2 — Paste parity (≈ 2–3 weeks)
 
-- [ ] Pinboards (tabs, pin/unpin, reorder).
-- [ ] Rules: per-app exclusion.
-- [ ] Quick paste `⌘1…⌘9` in overlay.
-- [ ] `Space` preview + edit-before-paste.
-- [ ] FTS5 full-text search + type filter chips.
-- [ ] Drag-out of overlay; multi-select paste stack.
+- [x] Pin/unpin clips (⌘P, hover button, context menu) — pinned clips never
+      expire and survive Clear History. *(Named pinboards/tabs still TBD.)*
+- [x] Rules: per-app exclusion (Settings → Excluded Apps).
+- [x] Time-based retention — auto-delete unpinned clips after 1 h…1 month.
+- [x] Per-clip delete (hover trash button, context menu, ⌘⌫).
+- [x] Quick paste `⌘1…⌘9` in overlay.
+- [x] `Space` preview. *(Edit-before-paste still TBD.)*
+- [ ] FTS5 full-text search *(type filter chips done)*.
+- [ ] Multi-select paste stack *(drag-out done)*.
 - [ ] App icon, polish pass, Developer ID signing + notarization.
 
 **Exit criteria:** a Paste user switching over misses nothing important on Mac.

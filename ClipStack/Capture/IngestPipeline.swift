@@ -17,11 +17,17 @@ final class IngestPipeline {
     func capture(from pasteboard: NSPasteboard) {
         let source = NSWorkspace.shared.frontmostApplication
 
+        // Rules: never capture from excluded apps.
+        if let bundle = source?.bundleIdentifier, settings.excludedBundles.contains(bundle) {
+            return
+        }
+
         guard let clip = makeClip(from: pasteboard, source: source) else { return }
 
         do {
             try database.ingest(clip)
-            let evicted = try database.enforceLimit(settings.historyLimit)
+            var evicted = try database.enforceLimit(settings.historyLimit)
+            evicted += try database.enforceRetention(seconds: settings.retentionSeconds)
             BlobStore.deleteFiles(for: evicted)
         } catch {
             NSLog("ClipStack ingest error: \(error)")

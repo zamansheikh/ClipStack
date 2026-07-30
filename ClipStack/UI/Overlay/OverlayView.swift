@@ -7,7 +7,11 @@ struct OverlayView: View {
     var body: some View {
         VStack(spacing: 10) {
             topBar
-            cardRow
+            if let previewClip = viewModel.previewClip {
+                ClipPreviewPane(clip: previewClip)
+            } else {
+                cardRow
+            }
         }
         .padding(12)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
@@ -46,7 +50,7 @@ struct OverlayView: View {
 
             Spacer()
 
-            Text("↩ paste · ⇧↩ plain · ⌘C copy · esc close")
+            Text("↩ paste · ⇧↩ plain · space preview · ⌘P pin · ⌘C copy · esc close")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
         }
@@ -61,7 +65,12 @@ struct OverlayView: View {
                     ScrollView(.horizontal, showsIndicators: false) {
                         LazyHStack(spacing: 12) {
                             ForEach(Array(viewModel.filteredClips.enumerated()), id: \.element.id) { index, clip in
-                                ClipCardView(clip: clip, isSelected: index == viewModel.selectedIndex)
+                                ClipCardView(
+                                    clip: clip,
+                                    isSelected: index == viewModel.selectedIndex,
+                                    onPin: { viewModel.togglePin(clip) },
+                                    onDelete: { viewModel.delete(clip) }
+                                )
                                     .id(clip.id)
                                     .onTapGesture(count: 2) {
                                         viewModel.paste(clip)
@@ -70,6 +79,15 @@ struct OverlayView: View {
                                         viewModel.selectedIndex = index
                                     }
                                     .onDrag { dragItem(for: clip) }
+                                    .contextMenu {
+                                        Button("Paste") { viewModel.paste(clip) }
+                                        Button("Paste as Plain Text") { viewModel.paste(clip, plainText: true) }
+                                        Button("Copy") { viewModel.copy(clip) }
+                                        Divider()
+                                        Button(clip.isPinned ? "Unpin" : "Pin") { viewModel.togglePin(clip) }
+                                        Divider()
+                                        Button("Delete", role: .destructive) { viewModel.delete(clip) }
+                                    }
                                     .overlay(alignment: .topTrailing) {
                                         if index < 9 {
                                             Text("⌘\(index + 1)")
@@ -126,5 +144,101 @@ struct OverlayView: View {
         default:
             return NSItemProvider(object: (clip.textContent ?? "") as NSString)
         }
+    }
+}
+
+/// Large preview shown when pressing Space on a card (arrows still navigate,
+/// Return pastes, Space/Esc closes).
+struct ClipPreviewPane: View {
+    let clip: Clip
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            previewContent
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 10))
+            metadata
+                .frame(width: 180)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    @ViewBuilder
+    private var previewContent: some View {
+        switch clip.kind {
+        case .text, .rtf, .url, .color:
+            ScrollView {
+                Text(clip.textContent ?? "")
+                    .font(.body)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .padding(12)
+            }
+        case .image:
+            if let path = clip.dataPath ?? clip.previewPath,
+               let image = NSImage(contentsOfFile: path)
+            {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(8)
+            } else {
+                Image(systemName: "photo")
+                    .font(.largeTitle)
+                    .foregroundStyle(.secondary)
+            }
+        case .file:
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(clip.fileURLs, id: \.path) { url in
+                        HStack(spacing: 8) {
+                            Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
+                                .resizable()
+                                .frame(width: 32, height: 32)
+                            Text(url.path)
+                                .font(.callout)
+                                .textSelection(.enabled)
+                                .truncationMode(.middle)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .padding(12)
+            }
+        }
+    }
+
+    private var metadata: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Image(nsImage: AppIconProvider.icon(forBundleIdentifier: clip.sourceBundle))
+                    .resizable()
+                    .frame(width: 20, height: 20)
+                Text(clip.sourceName ?? "Unknown app")
+                    .font(.callout.weight(.semibold))
+                    .lineLimit(1)
+            }
+            if clip.isPinned {
+                Label("Pinned", systemImage: "pin.fill")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+            LabeledContent("Copied") {
+                Text(clip.createdAt, format: .relative(presentation: .named))
+            }
+            LabeledContent("Size") {
+                Text(ByteCountFormatter.string(fromByteCount: Int64(clip.byteSize), countStyle: .file))
+            }
+            LabeledContent("Type") {
+                Text(clip.kind.rawValue.capitalized)
+            }
+            Spacer()
+            Text("space or esc to go back")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+        .font(.caption)
+        .padding(.vertical, 4)
     }
 }

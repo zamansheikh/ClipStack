@@ -51,6 +51,12 @@ final class AppDatabase {
             )
         }
 
+        migrator.registerMigration("v2") { db in
+            try db.alter(table: "clip") { t in
+                t.add(column: "pinnedAt", .datetime)
+            }
+        }
+
         return migrator
     }
 
@@ -85,13 +91,15 @@ final class AppDatabase {
         }
     }
 
-    /// Enforce the history item limit (0 = unlimited). Returns clips that were
-    /// evicted so the caller can delete their blob files.
+    /// Enforce the history item limit (0 = unlimited). Pinned clips never
+    /// count against nor fall to the limit. Returns evicted clips so the
+    /// caller can delete their blob files.
     func enforceLimit(_ limit: Int) throws -> [Clip] {
         guard limit > 0 else { return [] }
         return try dbQueue.write { db in
             let evicted = try Clip
                 .filter(Column("pinboardId") == nil)
+                .filter(Column("pinnedAt") == nil)
                 .order(Column("lastUsedAt").desc)
                 .limit(1_000_000, offset: limit)
                 .fetchAll(db)
@@ -102,12 +110,42 @@ final class AppDatabase {
         }
     }
 
-    /// Delete all history. Returns deleted clips so blob files can be cleaned up.
+    /// Delete unpinned clips older than the retention window (0 = keep forever).
+    /// Returns evicted clips so blob files can be cleaned up.
+    func enforceRetention(seconds: Int) throws -> [Clip] {
+        guard seconds > 0 else { return [] }
+        let cutoff = Date().addingTimeInterval(-Double(seconds))
+        return try dbQueue.write { db in
+            let evicted = try Clip
+                .filter(Column("pinboardId") == nil)
+                .filter(Column("pinnedAt") == nil)
+                .filter(Column("lastUsedAt") < cutoff)
+                .fetchAll(db)
+            for clip in evicted {
+                try clip.delete(db)
+            }
+            return evicted
+        }
+    }
+
+    /// Delete all unpinned history — pinned clips survive. Returns deleted
+    /// clips so blob files can be cleaned up.
     func clearHistory() throws -> [Clip] {
         try dbQueue.write { db in
-            let all = try Clip.filter(Column("pinboardId") == nil).fetchAll(db)
-            try Clip.filter(Column("pinboardId") == nil).deleteAll(db)
+            let request = Clip
+                .filter(Column("pinboardId") == nil)
+                .filter(Column("pinnedAt") == nil)
+            let all = try request.fetchAll(db)
+            try request.deleteAll(db)
             return all
+        }
+    }
+
+    func togglePin(id: String) throws {
+        try dbQueue.write { db in
+            guard var clip = try Clip.fetchOne(db, key: id) else { return }
+            clip.pinnedAt = clip.pinnedAt == nil ? Date() : nil
+            try clip.update(db)
         }
     }
 

@@ -3,6 +3,10 @@ import SwiftUI
 struct ClipCardView: View {
     let clip: Clip
     let isSelected: Bool
+    let onPin: () -> Void
+    let onDelete: () -> Void
+
+    @State private var isHovering = false
 
     private static let cardWidth: CGFloat = 200
     private static let cardHeight: CGFloat = 230
@@ -24,7 +28,13 @@ struct ClipCardView: View {
                     lineWidth: isSelected ? 3 : 1
                 )
         )
+        .overlay(alignment: .bottomTrailing) {
+            if isHovering {
+                hoverActions
+            }
+        }
         .shadow(color: .black.opacity(isSelected ? 0.25 : 0.1), radius: isSelected ? 8 : 4, y: 2)
+        .onHover { isHovering = $0 }
     }
 
     private var header: some View {
@@ -41,9 +51,38 @@ struct ClipCardView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
+            if clip.isPinned {
+                Image(systemName: "pin.fill")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
             Image(systemName: kindSymbol)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+        }
+        .padding(8)
+    }
+
+    private var hoverActions: some View {
+        HStack(spacing: 6) {
+            Button(action: onPin) {
+                Image(systemName: clip.isPinned ? "pin.slash.fill" : "pin.fill")
+                    .font(.caption)
+                    .frame(width: 22, height: 22)
+                    .background(.regularMaterial, in: Circle())
+            }
+            .buttonStyle(.plain)
+            .help(clip.isPinned ? "Unpin" : "Pin — pinned clips never expire")
+
+            Button(action: onDelete) {
+                Image(systemName: "trash.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .frame(width: 22, height: 22)
+                    .background(.regularMaterial, in: Circle())
+            }
+            .buttonStyle(.plain)
+            .help("Delete this clip")
         }
         .padding(8)
     }

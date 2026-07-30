@@ -7,6 +7,8 @@ final class AppSettings: ObservableObject {
     static let captureFilesKey = "captureFiles"
     static let captureImagesKey = "captureImages"
     static let maxItemMegabytesKey = "maxItemMegabytes"
+    static let retentionSecondsKey = "retentionSeconds"
+    static let excludedBundlesKey = "excludedBundles"
 
     /// Max history items to keep; 0 = unlimited.
     @Published var historyLimit: Int {
@@ -36,6 +38,16 @@ final class AppSettings: ObservableObject {
         maxItemMegabytes * 1_048_576
     }
 
+    /// Auto-delete unpinned clips older than this; 0 = keep forever.
+    @Published var retentionSeconds: Int {
+        didSet { UserDefaults.standard.set(retentionSeconds, forKey: Self.retentionSecondsKey) }
+    }
+
+    /// Bundle IDs of apps whose copies are never captured.
+    @Published var excludedBundles: [String] {
+        didSet { UserDefaults.standard.set(excludedBundles, forKey: Self.excludedBundlesKey) }
+    }
+
     init() {
         let defaults = UserDefaults.standard
         historyLimit = defaults.integer(forKey: Self.historyLimitKey)
@@ -44,5 +56,7 @@ final class AppSettings: ObservableObject {
         captureFiles = defaults.object(forKey: Self.captureFilesKey) as? Bool ?? true
         captureImages = defaults.object(forKey: Self.captureImagesKey) as? Bool ?? true
         maxItemMegabytes = defaults.object(forKey: Self.maxItemMegabytesKey) as? Int ?? 20
+        retentionSeconds = defaults.integer(forKey: Self.retentionSecondsKey)
+        excludedBundles = defaults.stringArray(forKey: Self.excludedBundlesKey) ?? []
     }
 }

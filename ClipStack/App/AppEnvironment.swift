@@ -35,10 +35,29 @@ final class AppEnvironment {
         overlayController = OverlayPanelController(viewModel: overlayViewModel)
     }
 
+    private var retentionTimer: Timer?
+
     func start() {
         watcher.start()
         KeyboardShortcuts.onKeyUp(for: .toggleOverlay) { [weak self] in
             self?.overlayController.toggle()
+        }
+
+        // Time-based retention: sweep at launch and every 5 minutes, so old
+        // clips expire even when nothing new is copied.
+        sweepRetention()
+        let timer = Timer(timeInterval: 300, repeats: true) { [weak self] _ in
+            DispatchQueue.main.async { self?.sweepRetention() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        retentionTimer = timer
+    }
+
+    private func sweepRetention() {
+        if let evicted = try? database.enforceRetention(seconds: settings.retentionSeconds),
+           !evicted.isEmpty
+        {
+            BlobStore.deleteFiles(for: evicted)
         }
     }
 

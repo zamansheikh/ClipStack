@@ -58,6 +58,20 @@ struct SettingsView: View {
                     Text("5,000 items").tag(5000)
                 }
 
+                Picker("Delete items after:", selection: $settings.retentionSeconds) {
+                    Text("Never").tag(0)
+                    Text("1 hour").tag(3600)
+                    Text("6 hours").tag(21600)
+                    Text("24 hours").tag(86400)
+                    Text("3 days").tag(259200)
+                    Text("1 week").tag(604800)
+                    Text("1 month").tag(2592000)
+                }
+
+                Text("Pinned clips never expire and are kept when clearing history.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
                 Button("Clear History…", role: .destructive) {
                     showClearConfirmation = true
                 }
@@ -69,7 +83,38 @@ struct SettingsView: View {
                         AppEnvironment.shared.clearHistory()
                     }
                 } message: {
-                    Text("This cannot be undone.")
+                    Text("Pinned clips are kept. This cannot be undone.")
+                }
+            }
+
+            Section("Excluded Apps") {
+                if settings.excludedBundles.isEmpty {
+                    Text("Copies from excluded apps are never recorded.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(settings.excludedBundles, id: \.self) { bundle in
+                    HStack {
+                        Image(nsImage: AppIconProvider.icon(forBundleIdentifier: bundle))
+                            .resizable()
+                            .frame(width: 18, height: 18)
+                        Text(displayName(forBundle: bundle))
+                        Spacer()
+                        Button {
+                            settings.excludedBundles.removeAll { $0 == bundle }
+                        } label: {
+                            Image(systemName: "minus.circle.fill")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                Menu("Exclude a Running App…") {
+                    ForEach(runningApps, id: \.bundle) { app in
+                        Button(app.name) {
+                            settings.excludedBundles.append(app.bundle)
+                        }
+                    }
                 }
             }
 
@@ -97,5 +142,24 @@ struct SettingsView: View {
             accessibilityGranted = AXIsProcessTrusted()
             launchAtLogin = SMAppService.mainApp.status == .enabled
         }
+    }
+
+    private func displayName(forBundle bundle: String) -> String {
+        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundle) {
+            return FileManager.default.displayName(atPath: url.path)
+        }
+        return bundle
+    }
+
+    /// Currently running regular apps not yet excluded, for the picker menu.
+    private var runningApps: [(name: String, bundle: String)] {
+        var seen = Set<String>(settings.excludedBundles)
+        return NSWorkspace.shared.runningApplications
+            .filter { $0.activationPolicy == .regular }
+            .compactMap { app -> (name: String, bundle: String)? in
+                guard let bundle = app.bundleIdentifier, seen.insert(bundle).inserted else { return nil }
+                return (app.localizedName ?? bundle, bundle)
+            }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 }

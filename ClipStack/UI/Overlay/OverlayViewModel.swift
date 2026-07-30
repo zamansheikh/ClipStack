@@ -4,6 +4,7 @@ import Foundation
 
 enum ClipFilter: String, CaseIterable, Identifiable {
     case all = "All"
+    case pinned = "Pinned"
     case text = "Text"
     case links = "Links"
     case images = "Images"
@@ -14,6 +15,7 @@ enum ClipFilter: String, CaseIterable, Identifiable {
     func matches(_ clip: Clip) -> Bool {
         switch self {
         case .all: return true
+        case .pinned: return clip.isPinned
         case .text: return clip.kind == .text || clip.kind == .rtf
         case .links: return clip.kind == .url
         case .images: return clip.kind == .image
@@ -29,6 +31,8 @@ final class OverlayViewModel: ObservableObject {
     @Published var selectedIndex = 0
     /// Bumped every time the overlay is shown, to re-focus the search field.
     @Published var focusToken = 0
+    /// Non-nil while the large Space preview is open.
+    @Published var previewClip: Clip?
 
     let clipStore: ClipStore
     private let pasteService: PasteService
@@ -58,7 +62,11 @@ final class OverlayViewModel: ObservableObject {
     }
 
     var filteredClips: [Clip] {
-        var clips = clipStore.clips.filter { filter.matches($0) }
+        // The Pinned tab reads the dedicated (unwindowed) pinned list, so old
+        // pins never disappear from it.
+        var clips = filter == .pinned
+            ? clipStore.pinnedClips
+            : clipStore.clips.filter { filter.matches($0) }
         let query = searchText.trimmingCharacters(in: .whitespaces).lowercased()
         if !query.isEmpty {
             // Prefix + substring search over content and source app (FTS5 later).
@@ -81,6 +89,7 @@ final class OverlayViewModel: ObservableObject {
         searchText = ""
         filter = .all
         selectedIndex = 0
+        previewClip = nil
         focusToken += 1
     }
 
@@ -88,6 +97,14 @@ final class OverlayViewModel: ObservableObject {
         let count = filteredClips.count
         guard count > 0 else { return }
         selectedIndex = min(max(selectedIndex + delta, 0), count - 1)
+        // Keep the open preview following the selection.
+        if previewClip != nil {
+            previewClip = selectedClip
+        }
+    }
+
+    func togglePreview() {
+        previewClip = previewClip == nil ? selectedClip : nil
     }
 
     func pasteSelected(plainText: Bool = false) {
@@ -110,15 +127,38 @@ final class OverlayViewModel: ObservableObject {
 
     func copySelected() {
         guard let clip = selectedClip else { return }
+        copy(clip)
+    }
+
+    func copy(_ clip: Clip) {
         pasteService.copy(clip)
         requestHide?()
     }
 
     func deleteSelected() {
         guard let clip = selectedClip else { return }
+        delete(clip)
+    }
+
+    func delete(_ clip: Clip) {
+        if previewClip?.id == clip.id { previewClip = nil }
         if let deleted = try? database.delete(id: clip.id) {
             BlobStore.deleteFiles(for: [deleted])
         }
         moveSelection(by: 0) // clamp selection to the new count
+    }
+
+    func togglePinSelected() {
+        guard let clip = selectedClip else { return }
+        togglePin(clip)
+    }
+
+    func togglePin(_ clip: Clip) {
+        try? database.togglePin(id: clip.id)
+        if previewClip?.id == clip.id {
+            var updated = clip
+            updated.pinnedAt = clip.isPinned ? nil : Date()
+            previewClip = updated
+        }
     }
 }

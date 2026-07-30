@@ -96,9 +96,23 @@ final class OverlayPanelController {
             return nil
         }
 
+        // ⌘P — pin/unpin selected
+        if command, event.charactersIgnoringModifiers == "p" {
+            viewModel.togglePinSelected()
+            return nil
+        }
+
         switch event.keyCode {
-        case 53: // Esc
-            hide()
+        case 53: // Esc — close preview first, then the overlay
+            if viewModel.previewClip != nil {
+                viewModel.previewClip = nil
+            } else {
+                hide()
+            }
+            return nil
+        case 49 where viewModel.searchText.isEmpty || viewModel.previewClip != nil:
+            // Space — toggle large preview (passes through while typing a search)
+            viewModel.togglePreview()
             return nil
         case 123: // ←
             viewModel.moveSelection(by: -1)
