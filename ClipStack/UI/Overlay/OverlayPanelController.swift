@@ -21,11 +21,41 @@ final class OverlayPanelController {
         panel.contentView = hostingView
 
         panel.onResignKey = { [weak self] in
-            self?.hide()
+            guard let self, !self.isPresentingModal else { return }
+            self.hide()
         }
         viewModel.requestHide = { [weak self] in
             self?.hide()
         }
+        viewModel.promptForText = { [weak self] title, initial in
+            self?.presentTextPrompt(title: title, initial: initial)
+        }
+    }
+
+    /// True while a modal prompt is open on top of the overlay, so losing
+    /// key status doesn't auto-hide the panel.
+    private var isPresentingModal = false
+
+    private func presentTextPrompt(title: String, initial: String) -> String? {
+        isPresentingModal = true
+        defer {
+            isPresentingModal = false
+            panel.makeKeyAndOrderFront(nil)
+        }
+
+        let alert = NSAlert()
+        alert.messageText = title
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+        field.stringValue = initial
+        field.placeholderString = "Name"
+        alert.accessoryView = field
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = field
+
+        NSApp.activate(ignoringOtherApps: true)
+        let response = alert.runModal()
+        return response == .alertFirstButtonReturn ? field.stringValue : nil
     }
 
     var isVisible: Bool { panel.isVisible }
@@ -130,8 +160,11 @@ final class OverlayPanelController {
         case 124: // →
             viewModel.moveSelection(by: 1)
             return nil
-        case 36, 76: // Return / keypad Enter
-            viewModel.pasteSelected(plainText: shiftOrOption)
+        case 36, 76: // Return / keypad Enter — pastes the stack if one is built
+            viewModel.pasteStackOrSelected(plainText: shiftOrOption)
+            return nil
+        case 48: // Tab / ⇧Tab — cycle History → Pinned → pinboards
+            viewModel.cycleTab(event.modifierFlags.contains(.shift) ? -1 : 1)
             return nil
         case 51 where command: // ⌘⌫ — delete selected clip
             viewModel.deleteSelected()

@@ -218,6 +218,76 @@ final class AppDatabase {
         }
     }
 
+    // MARK: - Pinboards
+
+    func createPinboard(named name: String) throws -> Pinboard {
+        try dbQueue.write { db in
+            let maxOrder = try Int.fetchOne(db, sql: "SELECT MAX(sortOrder) FROM pinboard") ?? 0
+            let board = Pinboard(id: UUID().uuidString, name: name, sortOrder: maxOrder + 1)
+            try board.insert(db)
+            return board
+        }
+    }
+
+    func renamePinboard(id: String, to name: String) throws {
+        try dbQueue.write { db in
+            try db.execute(sql: "UPDATE pinboard SET name = ? WHERE id = ?", arguments: [name, id])
+        }
+    }
+
+    /// Delete a pinboard; its clips return to loose pins (nothing is lost).
+    func deletePinboard(id: String) throws {
+        try dbQueue.write { db in
+            let clips = try Clip.filter(Column("pinboardId") == id).fetchAll(db)
+            for clip in clips {
+                try Self.unassign(clip, in: db)
+            }
+            try db.execute(sql: "DELETE FROM pinboard WHERE id = ?", arguments: [id])
+        }
+    }
+
+    func movePinboard(id: String, direction: Int) throws {
+        try dbQueue.write { db in
+            let boards = try Pinboard.order(Column("sortOrder")).fetchAll(db)
+            guard let index = boards.firstIndex(where: { $0.id == id }) else { return }
+            let target = index + direction
+            guard boards.indices.contains(target) else { return }
+            var a = boards[index]
+            var b = boards[target]
+            swap(&a.sortOrder, &b.sortOrder)
+            try a.update(db)
+            try b.update(db)
+        }
+    }
+
+    /// Move a clip into a pinboard (auto-pins it) or back out (nil).
+    func assign(clipId: String, toPinboard boardId: String?) throws {
+        try dbQueue.write { db in
+            guard var clip = try Clip.fetchOne(db, key: clipId) else { return }
+            if let boardId {
+                clip.pinboardId = boardId
+                if clip.pinnedAt == nil { clip.pinnedAt = Date() }
+                try clip.update(db)
+            } else {
+                try Self.unassign(clip, in: db)
+            }
+        }
+    }
+
+    /// Returning a clip to history can collide with the history dedupe index
+    /// if the same content was copied again meanwhile — fall back to a
+    /// synthetic hash so the clip is never lost.
+    private static func unassign(_ clip: Clip, in db: Database) throws {
+        var clip = clip
+        clip.pinboardId = nil
+        do {
+            try clip.update(db)
+        } catch {
+            clip.contentHash = "unassigned:" + clip.id
+            try clip.update(db)
+        }
+    }
+
     func delete(id: String) throws -> Clip? {
         try dbQueue.write { db in
             guard let clip = try Clip.fetchOne(db, key: id) else { return nil }

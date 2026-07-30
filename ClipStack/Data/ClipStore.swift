@@ -7,9 +7,13 @@ import GRDB
 @MainActor
 final class ClipStore: ObservableObject {
     @Published private(set) var clips: [Clip] = []
-    /// Pinned clips, most recently pinned first. Not subject to the 500-row
-    /// history window, so old pins never drop out of the Pinned tab.
+    /// Loose pins (not in a named pinboard), most recently pinned first. Not
+    /// subject to the 500-row history window, so old pins never drop out.
     @Published private(set) var pinnedClips: [Clip] = []
+    /// Named pinboards in user sort order.
+    @Published private(set) var pinboards: [Pinboard] = []
+    /// Clips per pinboard id.
+    @Published private(set) var boardClips: [String: [Clip]] = [:]
 
     private var cancellables: [AnyDatabaseCancellable] = []
 
@@ -24,7 +28,17 @@ final class ClipStore: ObservableObject {
         let pinnedObservation = ValueObservation.tracking { db in
             try Clip
                 .filter(Column("pinnedAt") != nil)
+                .filter(Column("pinboardId") == nil)
                 .order(Column("pinnedAt").desc)
+                .fetchAll(db)
+        }
+        let boardsObservation = ValueObservation.tracking { db in
+            try Pinboard.order(Column("sortOrder")).fetchAll(db)
+        }
+        let boardClipsObservation = ValueObservation.tracking { db in
+            try Clip
+                .filter(Column("pinboardId") != nil)
+                .order(Column("lastUsedAt").desc)
                 .fetchAll(db)
         }
 
@@ -50,6 +64,30 @@ final class ClipStore: ObservableObject {
             onChange: { [weak self] clips in
                 MainActor.assumeIsolated {
                     self?.pinnedClips = clips
+                }
+            }
+        ))
+        cancellables.append(boardsObservation.start(
+            in: database.dbQueue,
+            scheduling: .async(onQueue: .main),
+            onError: { error in
+                NSLog("ClipStore pinboards observation error: \(error)")
+            },
+            onChange: { [weak self] boards in
+                MainActor.assumeIsolated {
+                    self?.pinboards = boards
+                }
+            }
+        ))
+        cancellables.append(boardClipsObservation.start(
+            in: database.dbQueue,
+            scheduling: .async(onQueue: .main),
+            onError: { error in
+                NSLog("ClipStore board clips observation error: \(error)")
+            },
+            onChange: { [weak self] clips in
+                MainActor.assumeIsolated {
+                    self?.boardClips = Dictionary(grouping: clips) { $0.pinboardId ?? "" }
                 }
             }
         ))

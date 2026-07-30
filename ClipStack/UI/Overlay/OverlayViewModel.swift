@@ -2,9 +2,9 @@ import AppKit
 import Combine
 import Foundation
 
+/// Kind filter chips (apply within the current tab).
 enum ClipFilter: String, CaseIterable, Identifiable {
     case all = "All"
-    case pinned = "Pinned"
     case text = "Text"
     case links = "Links"
     case images = "Images"
@@ -15,7 +15,6 @@ enum ClipFilter: String, CaseIterable, Identifiable {
     func matches(_ clip: Clip) -> Bool {
         switch self {
         case .all: return true
-        case .pinned: return clip.isPinned
         case .text: return clip.kind == .text || clip.kind == .rtf
         case .links: return clip.kind == .url
         case .images: return clip.kind == .image
@@ -24,11 +23,21 @@ enum ClipFilter: String, CaseIterable, Identifiable {
     }
 }
 
+/// Which collection the overlay is showing.
+enum OverlayTab: Equatable {
+    case history
+    case pinned
+    case board(String)
+}
+
 @MainActor
 final class OverlayViewModel: ObservableObject {
     @Published var searchText = ""
     @Published var filter: ClipFilter = .all
+    @Published var tab: OverlayTab = .history
     @Published var selectedIndex = 0
+    /// Multi-select paste stack, in the order items were added (⌘-click).
+    @Published private(set) var stack: [Clip] = []
     /// Bumped every time the overlay is shown, to re-focus the search field.
     @Published var focusToken = 0
     /// Non-nil while the large Space preview is open.
@@ -67,18 +76,26 @@ final class OverlayViewModel: ObservableObject {
         $filter
             .sink { [weak self] _ in self?.selectedIndex = 0 }
             .store(in: &cancellables)
+        $tab
+            .sink { [weak self] _ in self?.selectedIndex = 0 }
+            .store(in: &cancellables)
     }
 
     var filteredClips: [Clip] {
         let base: [Clip]
         if let searchResults {
-            // FTS results span the whole database, not just the 500-row window.
+            // FTS results span the whole database (all tabs), not just the
+            // 500-row history window.
             base = searchResults
-        } else if filter == .pinned {
-            // Dedicated (unwindowed) pinned list, so old pins never drop out.
-            base = clipStore.pinnedClips
         } else {
-            base = clipStore.clips
+            switch tab {
+            case .history:
+                base = clipStore.clips
+            case .pinned:
+                base = clipStore.pinnedClips
+            case .board(let id):
+                base = clipStore.boardClips[id] ?? []
+            }
         }
         return filter == .all ? base : base.filter { filter.matches($0) }
     }
@@ -110,9 +127,95 @@ final class OverlayViewModel: ObservableObject {
     func prepareForShow() {
         searchText = ""
         filter = .all
+        tab = .history
         selectedIndex = 0
+        stack = []
         closePreview()
         focusToken += 1
+    }
+
+    // MARK: - Paste stack (multi-select)
+
+    func toggleStack(_ clip: Clip) {
+        if let index = stack.firstIndex(where: { $0.id == clip.id }) {
+            stack.remove(at: index)
+        } else {
+            stack.append(clip)
+        }
+    }
+
+    /// 1-based position of a clip in the paste stack, nil if not in it.
+    func stackIndex(of clip: Clip) -> Int? {
+        stack.firstIndex { $0.id == clip.id }.map { $0 + 1 }
+    }
+
+    func clearStack() {
+        stack = []
+    }
+
+    /// Return key: paste the stack if one was built, else the selected card.
+    func pasteStackOrSelected(plainText: Bool = false) {
+        guard !stack.isEmpty else {
+            pasteSelected(plainText: plainText)
+            return
+        }
+        let items = stack
+        stack = []
+        requestHide?()
+        pasteService.pasteSequentially(items, plainText: plainText)
+    }
+
+    // MARK: - Pinboards
+
+    var pinboards: [Pinboard] { clipStore.pinboards }
+
+    /// Set by the panel controller: shows a modal text prompt, returns the
+    /// entered string or nil on cancel.
+    var promptForText: ((_ title: String, _ initial: String) -> String?)?
+
+    func assign(_ clip: Clip, toBoard boardId: String?) {
+        try? database.assign(clipId: clip.id, toPinboard: boardId)
+    }
+
+    func createPinboard(assigning clip: Clip? = nil) {
+        guard let name = promptForText?("New Pinboard", "")?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !name.isEmpty
+        else { return }
+        guard let board = try? database.createPinboard(named: name) else { return }
+        if let clip {
+            assign(clip, toBoard: board.id)
+        }
+        tab = .board(board.id)
+    }
+
+    func renamePinboard(_ board: Pinboard) {
+        guard let name = promptForText?("Rename Pinboard", board.name)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !name.isEmpty
+        else { return }
+        try? database.renamePinboard(id: board.id, to: name)
+    }
+
+    func deletePinboard(_ board: Pinboard) {
+        try? database.deletePinboard(id: board.id)
+        if tab == .board(board.id) {
+            tab = .pinned
+        }
+    }
+
+    func movePinboard(_ board: Pinboard, direction: Int) {
+        try? database.movePinboard(id: board.id, direction: direction)
+    }
+
+    /// Tab key cycles History → Pinned → boards → back.
+    func cycleTab(_ delta: Int) {
+        let tabs: [OverlayTab] = [.history, .pinned] + pinboards.map { .board($0.id) }
+        guard let index = tabs.firstIndex(of: tab) else {
+            tab = .history
+            return
+        }
+        tab = tabs[(index + delta + tabs.count) % tabs.count]
     }
 
     func closePreview() {

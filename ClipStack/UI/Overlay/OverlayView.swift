@@ -5,8 +5,9 @@ struct OverlayView: View {
     @FocusState private var searchFocused: Bool
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 8) {
             topBar
+            tabBar
             if let previewClip = viewModel.previewClip {
                 ClipPreviewPane(clip: previewClip, viewModel: viewModel)
             } else {
@@ -50,10 +51,65 @@ struct OverlayView: View {
 
             Spacer()
 
-            Text("↩ paste · ⇧↩ plain · space preview · ⌘P pin · ⌘C copy · esc close")
+            Text("↩ paste · ⇧↩ plain · space preview · ⌘P pin · ⌘click multi-select · ⇥ tabs")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
         }
+    }
+
+    private var tabBar: some View {
+        HStack(spacing: 6) {
+            tabChip(.history, label: "History", systemImage: "clock")
+            tabChip(.pinned, label: "Pinned", systemImage: "pin")
+            ForEach(viewModel.pinboards) { board in
+                tabChip(.board(board.id), label: board.name, systemImage: "square.grid.2x2")
+                    .contextMenu {
+                        Button("Rename…") { viewModel.renamePinboard(board) }
+                        Button("Move Left") { viewModel.movePinboard(board, direction: -1) }
+                        Button("Move Right") { viewModel.movePinboard(board, direction: 1) }
+                        Divider()
+                        Button("Delete Pinboard", role: .destructive) {
+                            viewModel.deletePinboard(board)
+                        }
+                    }
+            }
+            Button {
+                viewModel.createPinboard()
+            } label: {
+                Image(systemName: "plus")
+                    .font(.callout)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+            }
+            .buttonStyle(.plain)
+            .help("New pinboard")
+
+            Spacer()
+
+            if !viewModel.stack.isEmpty {
+                Text("\(viewModel.stack.count) in paste stack — ↩ pastes all in order")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button("Clear") { viewModel.clearStack() }
+                    .font(.caption)
+            }
+        }
+    }
+
+    private func tabChip(_ tab: OverlayTab, label: String, systemImage: String) -> some View {
+        Button {
+            viewModel.tab = tab
+        } label: {
+            Label(label, systemImage: systemImage)
+                .font(.callout)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(
+                    viewModel.tab == tab ? Color.accentColor.opacity(0.25) : Color.primary.opacity(0.05),
+                    in: Capsule()
+                )
+        }
+        .buttonStyle(.plain)
     }
 
     private var cardRow: some View {
@@ -76,7 +132,11 @@ struct OverlayView: View {
                                         viewModel.paste(clip)
                                     }
                                     .onTapGesture {
-                                        viewModel.selectedIndex = index
+                                        if NSEvent.modifierFlags.contains(.command) {
+                                            viewModel.toggleStack(clip)
+                                        } else {
+                                            viewModel.selectedIndex = index
+                                        }
                                     }
                                     .onDrag { dragItem(for: clip) }
                                     .contextMenu {
@@ -85,6 +145,21 @@ struct OverlayView: View {
                                         Button("Copy") { viewModel.copy(clip) }
                                         Divider()
                                         Button(clip.isPinned ? "Unpin" : "Pin") { viewModel.togglePin(clip) }
+                                        Menu("Move to Pinboard") {
+                                            ForEach(viewModel.pinboards) { board in
+                                                Button(board.name) { viewModel.assign(clip, toBoard: board.id) }
+                                            }
+                                            if !viewModel.pinboards.isEmpty { Divider() }
+                                            Button("New Pinboard…") { viewModel.createPinboard(assigning: clip) }
+                                        }
+                                        if clip.pinboardId != nil {
+                                            Button("Remove from Pinboard") { viewModel.assign(clip, toBoard: nil) }
+                                        }
+                                        Divider()
+                                        Button(viewModel.stackIndex(of: clip) == nil
+                                               ? "Add to Paste Stack" : "Remove from Paste Stack") {
+                                            viewModel.toggleStack(clip)
+                                        }
                                         Divider()
                                         Button("Delete", role: .destructive) { viewModel.delete(clip) }
                                     }
@@ -94,6 +169,16 @@ struct OverlayView: View {
                                                 .font(.caption2.monospaced())
                                                 .foregroundStyle(.secondary)
                                                 .padding(4)
+                                        }
+                                    }
+                                    .overlay(alignment: .topLeading) {
+                                        if let stackNumber = viewModel.stackIndex(of: clip) {
+                                            Text("\(stackNumber)")
+                                                .font(.caption2.bold())
+                                                .foregroundStyle(.white)
+                                                .frame(width: 18, height: 18)
+                                                .background(Color.accentColor, in: Circle())
+                                                .padding(5)
                                         }
                                     }
                             }
@@ -119,16 +204,32 @@ struct OverlayView: View {
             Image(systemName: "doc.on.clipboard")
                 .font(.largeTitle)
                 .foregroundStyle(.secondary)
-            Text(viewModel.searchText.isEmpty ? "Nothing copied yet" : "No matches")
+            Text(emptyTitle)
                 .font(.headline)
                 .foregroundStyle(.secondary)
-            Text(viewModel.searchText.isEmpty
-                 ? "Copy something and it will show up here."
-                 : "Try a different search or filter.")
+            Text(emptyHint)
                 .font(.caption)
                 .foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var emptyTitle: String {
+        if !viewModel.searchText.isEmpty { return "No matches" }
+        switch viewModel.tab {
+        case .history: return "Nothing copied yet"
+        case .pinned: return "No pinned clips"
+        case .board: return "This pinboard is empty"
+        }
+    }
+
+    private var emptyHint: String {
+        if !viewModel.searchText.isEmpty { return "Try a different search or filter." }
+        switch viewModel.tab {
+        case .history: return "Copy something and it will show up here."
+        case .pinned: return "Pin a clip with ⌘P or its hover pin button."
+        case .board: return "Right-click a clip → Move to Pinboard."
+        }
     }
 
     private func dragItem(for clip: Clip) -> NSItemProvider {

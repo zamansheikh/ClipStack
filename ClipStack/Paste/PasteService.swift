@@ -69,6 +69,34 @@ final class PasteService {
         }
     }
 
+    /// Paste stack: paste several clips one after another into the frontmost
+    /// app. Without Accessibility, falls back to copying all text content as
+    /// one newline-joined clipboard entry.
+    func pasteSequentially(_ clips: [Clip], plainText: Bool = false) {
+        guard !clips.isEmpty else { return }
+
+        guard canDirectPaste else {
+            let joined = clips.compactMap { $0.textContent }.joined(separator: "\n")
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.setString(joined, forType: .string)
+            pasteboard.setString("1", forType: ClipboardWatcher.selfWriteType)
+            return
+        }
+
+        for (index, clip) in clips.enumerated() {
+            // 0.4 s per item: enough for the target app to process each ⌘V
+            // before the pasteboard changes under it.
+            let offset = 0.15 + Double(index) * 0.4
+            DispatchQueue.main.asyncAfter(deadline: .now() + offset) { [weak self] in
+                self?.copy(clip, plainText: plainText)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + offset + 0.15) {
+                Self.sendCmdV()
+            }
+        }
+    }
+
     private static func sendCmdV() {
         let vKeyCode: CGKeyCode = 9
         guard let source = CGEventSource(stateID: .combinedSessionState) else { return }
