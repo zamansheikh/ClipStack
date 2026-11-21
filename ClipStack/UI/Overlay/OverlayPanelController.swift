@@ -109,6 +109,13 @@ final class OverlayPanelController {
 
     /// Returns nil when the event was consumed.
     private func handle(_ event: NSEvent) -> NSEvent? {
+        // An input method is composing (Avro, Japanese, Chinese…): Return,
+        // Space, arrows, Tab and Esc pick or cancel candidates, so they must
+        // reach the text field instead of pasting or moving cards.
+        if let editor = panel.firstResponder as? NSTextView, editor.hasMarkedText() {
+            return event
+        }
+
         // While the preview's text editor is active, all keys belong to it —
         // except Esc, which cancels editing.
         if viewModel.isEditingPreview {

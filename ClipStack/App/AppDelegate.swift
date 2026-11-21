@@ -3,6 +3,11 @@ import ApplicationServices
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
+        #if DEBUG
+        // CLIPSTACK_SNAPSHOT_DIR: render Settings to PNGs and quit, before
+        // the watcher or sync start.
+        MainActor.assumeIsolated { SettingsSnapshots.runIfRequested() }
+        #endif
         let environment = AppEnvironment.shared
         environment.start()
 

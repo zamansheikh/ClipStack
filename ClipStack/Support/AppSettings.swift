@@ -9,6 +9,12 @@ final class AppSettings: ObservableObject {
     static let maxItemMegabytesKey = "maxItemMegabytes"
     static let retentionSecondsKey = "retentionSeconds"
     static let excludedBundlesKey = "excludedBundles"
+    static let syncEnabledKey = "syncEnabled"
+
+    /// Share the clipboard with paired devices over Wi-Fi (off by default).
+    @Published var syncEnabled: Bool {
+        didSet { UserDefaults.standard.set(syncEnabled, forKey: Self.syncEnabledKey) }
+    }
 
     /// Max history items to keep; 0 = unlimited.
     @Published var historyLimit: Int {
@@ -58,5 +64,6 @@ final class AppSettings: ObservableObject {
         maxItemMegabytes = defaults.object(forKey: Self.maxItemMegabytesKey) as? Int ?? 20
         retentionSeconds = defaults.integer(forKey: Self.retentionSecondsKey)
         excludedBundles = defaults.stringArray(forKey: Self.excludedBundlesKey) ?? []
+        syncEnabled = defaults.bool(forKey: Self.syncEnabledKey)
     }
 }

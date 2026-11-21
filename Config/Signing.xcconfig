@@ -1,0 +1,18 @@
+// Code signing for ClipStack.
+//
+// Default: ad-hoc ("Sign to Run Locally"), so a fresh clone builds with no
+// setup. Ad-hoc signatures change on every build, which makes macOS forget
+// the Accessibility permission after each rebuild.
+//
+// To keep the permission across rebuilds, create Config/Signing.local.xcconfig
+// (git-ignored) with a real certificate, for example:
+//
+//     CODE_SIGN_IDENTITY = Apple Development
+//     DEVELOPMENT_TEAM = YOURTEAMID
+//
+// `security find-identity -v -p codesigning` lists the certificates you have.
+
+CODE_SIGN_STYLE = Manual
+CODE_SIGN_IDENTITY = -
+
+#include? "Signing.local.xcconfig"

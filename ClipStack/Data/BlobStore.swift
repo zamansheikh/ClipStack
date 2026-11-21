@@ -74,12 +74,39 @@ enum BlobStore {
         }
     }
 
-    /// Remove blob/preview files belonging to deleted clips.
-    static func deleteFiles(for clips: [Clip]) {
+    /// Remove blob/preview files belonging to deleted clips — but only files
+    /// no remaining row points at. Files are content-addressed, so a pinboard
+    /// copy and a history row of the same image share one file; deleting the
+    /// history row must not break the pinboard copy.
+    static func deleteFiles(for clips: [Clip], database: AppDatabase) {
+        let candidates = Set(clips.flatMap { [$0.dataPath, $0.previewPath].compactMap { $0 } })
+        guard !candidates.isEmpty,
+              // If the check fails, keep everything: a stray file is harmless,
+              // a missing one breaks a clip.
+              let stillUsed = try? database.referencedFilePaths()
+        else { return }
         let fm = FileManager.default
-        for clip in clips {
-            if let path = clip.dataPath { try? fm.removeItem(atPath: path) }
-            if let path = clip.previewPath { try? fm.removeItem(atPath: path) }
+        for path in candidates.subtracting(stillUsed) {
+            try? fm.removeItem(atPath: path)
+        }
+    }
+
+    /// Delete files in blobs/ and previews/ that no clip row references:
+    /// leftovers from older builds or interrupted writes. Matches on
+    /// "folder/file name" only, so a differently spelled support-directory
+    /// path can never make a referenced file look unreferenced.
+    static func sweepOrphans(database: AppDatabase) {
+        guard let referenced = try? database.referencedFilePaths() else { return }
+        func key(_ url: URL) -> String {
+            url.deletingLastPathComponent().lastPathComponent + "/" + url.lastPathComponent
+        }
+        let keep = Set(referenced.map { key(URL(fileURLWithPath: $0)) })
+        let fm = FileManager.default
+        for directory in [blobsDirectory, previewsDirectory] {
+            let files = (try? fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
+            for file in files where !keep.contains(key(file)) {
+                try? fm.removeItem(at: file)
+            }
         }
     }
 }

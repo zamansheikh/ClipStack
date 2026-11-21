@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import KeyboardShortcuts
 
@@ -18,6 +19,16 @@ final class AppEnvironment {
     let watcher: ClipboardWatcher
     let overlayViewModel: OverlayViewModel
     let overlayController: OverlayPanelController
+    let sync: SyncService
+
+    private var cancellables: Set<AnyCancellable> = []
+
+    /// Test hook: CLIPSTACK_DEBUG_PAIR_FILE runs sync with an always-open
+    /// pairing window and writes its link to that file.
+    private let debugPairFile: String? = {
+        let path = ProcessInfo.processInfo.environment["CLIPSTACK_DEBUG_PAIR_FILE"]
+        return path?.isEmpty == false ? path : nil
+    }()
 
     private init() {
         // A clipboard manager without its database is useless; crash loudly.
@@ -33,11 +44,14 @@ final class AppEnvironment {
             database: database
         )
         overlayController = OverlayPanelController(viewModel: overlayViewModel)
+        sync = SyncService(database: database, settings: settings)
     }
 
     private var retentionTimer: Timer?
 
     func start() {
+        // Before capture starts, so no new file can be mid-write.
+        BlobStore.sweepOrphans(database: database)
         watcher.start()
         KeyboardShortcuts.onKeyUp(for: .toggleOverlay) { [weak self] in
             self?.overlayController.toggle()
@@ -51,25 +65,49 @@ final class AppEnvironment {
         }
         RunLoop.main.add(timer, forMode: .common)
         retentionTimer = timer
+
+        startSync()
+    }
+
+    private func startSync() {
+        // Local copies go to paired devices. capture(from:) runs on the main
+        // run loop (watcher timer), so hopping onto the main actor is safe.
+        ingest.onCaptured = { [weak self] clip in
+            MainActor.assumeIsolated {
+                self?.sync.broadcast(clip)
+            }
+        }
+
+        if let debugPairFile {
+            sync.startDebugPairing(writingLinkTo: debugPairFile)
+            return
+        }
+        settings.$syncEnabled
+            .removeDuplicates()
+            .sink { [weak self] enabled in
+                guard let self else { return }
+                if enabled { self.sync.start() } else { self.sync.stop() }
+            }
+            .store(in: &cancellables)
     }
 
     private func sweepRetention() {
         if let evicted = try? database.enforceRetention(seconds: settings.retentionSeconds),
            !evicted.isEmpty
         {
-            BlobStore.deleteFiles(for: evicted)
+            BlobStore.deleteFiles(for: evicted, database: database)
         }
     }
 
     func clearHistory() {
         if let deleted = try? database.clearHistory() {
-            BlobStore.deleteFiles(for: deleted)
+            BlobStore.deleteFiles(for: deleted, database: database)
         }
     }
 
     func clearHistory(kinds: [ClipKind]) {
         if let deleted = try? database.clearHistory(kinds: kinds) {
-            BlobStore.deleteFiles(for: deleted)
+            BlobStore.deleteFiles(for: deleted, database: database)
         }
     }
 }

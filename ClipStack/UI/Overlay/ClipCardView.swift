@@ -33,6 +33,8 @@ struct ClipCardView: View {
                 hoverActions
             }
         }
+        // Hit-test, hover, tap and drag exactly the card's visible shape.
+        .contentShape(RoundedRectangle(cornerRadius: 12))
         .shadow(color: .black.opacity(isSelected ? 0.25 : 0.1), radius: isSelected ? 8 : 4, y: 2)
         .onHover { isHovering = $0 }
     }
@@ -118,6 +120,9 @@ struct ClipCardView: View {
                 // Color.clear takes exactly the proposed size; overlaying the
                 // filled image inside it keeps the oversized image from
                 // inflating layout, and .clipped() cuts it to the card.
+                // .clipped() only affects drawing, so .contentShape() is what
+                // stops the invisible overflow from taking hover and clicks
+                // meant for the neighbouring cards.
                 Color.clear
                     .overlay(
                         Image(nsImage: image)
@@ -125,6 +130,7 @@ struct ClipCardView: View {
                             .scaledToFill()
                     )
                     .clipped()
+                    .contentShape(Rectangle())
             } else {
                 placeholder(symbol: "photo")
             }

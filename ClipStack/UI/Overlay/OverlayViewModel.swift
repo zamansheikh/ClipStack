@@ -61,9 +61,14 @@ final class OverlayViewModel: ObservableObject {
         self.pasteService = pasteService
         self.database = database
 
+        // receive(on:) delivers asynchronously, i.e. after the store has
+        // applied the new values.
         clipStore.objectWillChange
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+                self?.storeDidChange()
+            }
             .store(in: &cancellables)
 
         $searchText
@@ -98,6 +103,19 @@ final class OverlayViewModel: ObservableObject {
             }
         }
         return filter == .all ? base : base.filter { filter.matches($0) }
+    }
+
+    /// The database changed (delete, pin, edit, new copy). Search results are
+    /// a snapshot, so re-run them, and keep the selection on a real card —
+    /// deleting the last card used to leave nothing selected.
+    private func storeDidChange() {
+        if searchResults != nil {
+            runSearch(searchText)
+        }
+        let count = filteredClips.count
+        if selectedIndex >= count {
+            selectedIndex = max(count - 1, 0)
+        }
     }
 
     private func runSearch(_ text: String) {
@@ -290,8 +308,10 @@ final class OverlayViewModel: ObservableObject {
 
     func delete(_ clip: Clip) {
         if previewClip?.id == clip.id { closePreview() }
+        // A deleted clip must not stay queued in the paste stack.
+        stack.removeAll { $0.id == clip.id }
         if let deleted = try? database.delete(id: clip.id) {
-            BlobStore.deleteFiles(for: [deleted])
+            BlobStore.deleteFiles(for: [deleted], database: database)
         }
         moveSelection(by: 0) // clamp selection to the new count
     }

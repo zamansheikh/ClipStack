@@ -8,6 +8,11 @@ final class IngestPipeline {
     private let database: AppDatabase
     private let settings: AppSettings
 
+    /// Called with each clip captured from the local clipboard (Wi-Fi sync
+    /// sends it to paired devices). Runs on the main thread: capture is driven
+    /// by the watcher's main-run-loop timer.
+    var onCaptured: ((Clip) -> Void)?
+
     init(database: AppDatabase, settings: AppSettings) {
         self.database = database
         self.settings = settings
@@ -28,10 +33,12 @@ final class IngestPipeline {
             try database.ingest(clip)
             var evicted = try database.enforceLimit(settings.historyLimit)
             evicted += try database.enforceRetention(seconds: settings.retentionSeconds)
-            BlobStore.deleteFiles(for: evicted)
+            BlobStore.deleteFiles(for: evicted, database: database)
         } catch {
             NSLog("ClipStack ingest error: \(error)")
+            return
         }
+        onCaptured?(clip)
     }
 
     private func makeClip(from pasteboard: NSPasteboard, source: NSRunningApplication?) -> Clip? {

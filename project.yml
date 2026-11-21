@@ -23,6 +23,20 @@ targets:
       - package: GRDB
         product: GRDB
       - package: KeyboardShortcuts
+    # Signing lives in the xcconfig so a git-ignored local file can supply a
+    # real certificate (see Config/Signing.xcconfig).
+    configFiles:
+      Debug: Config/Signing.xcconfig
+      Release: Config/Signing.xcconfig
+    # Keys the generated Info.plist can't express (arrays). XcodeGen writes
+    # this file on `xcodegen generate`; Xcode merges it with the
+    # INFOPLIST_KEY_* settings below.
+    info:
+      path: Config/Info.plist
+      properties:
+        NSLocalNetworkUsageDescription: ClipStack shares your clipboard with your paired phone and computers on the same Wi-Fi network.
+        NSBonjourServices:
+          - _clipstack._tcp
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.zamansheikh.ClipStack
@@ -33,8 +47,6 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_LSUIElement: YES
         INFOPLIST_KEY_NSHumanReadableCopyright: ""
-        CODE_SIGN_STYLE: Automatic
-        CODE_SIGN_IDENTITY: "-"
         ENABLE_HARDENED_RUNTIME: YES
         ENABLE_USER_SCRIPT_SANDBOXING: NO
         COMBINE_HIDPI_IMAGES: YES

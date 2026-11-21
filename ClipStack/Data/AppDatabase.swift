@@ -5,7 +5,20 @@ import GRDB
 final class AppDatabase {
     let dbQueue: DatabaseQueue
 
+    /// Test hook: CLIPSTACK_SUPPORT_DIR points the database, blobs and sync
+    /// identity at a scratch folder, so automated tests never touch the
+    /// user's real history.
+    private static let testSupportDirectory: URL? = {
+        guard let path = ProcessInfo.processInfo.environment["CLIPSTACK_SUPPORT_DIR"], !path.isEmpty else {
+            return nil
+        }
+        return URL(fileURLWithPath: path, isDirectory: true)
+    }()
+
+    static var isUsingTestSupportDirectory: Bool { testSupportDirectory != nil }
+
     static let supportDirectory: URL = {
+        if let testSupportDirectory { return testSupportDirectory }
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         return base.appendingPathComponent("ClipStack", isDirectory: true)
     }()
@@ -68,6 +81,31 @@ final class AppDatabase {
             }
         }
 
+        migrator.registerMigration("v4") { db in
+            // Devices paired for Wi-Fi sync (docs/05-lan-sync.md).
+            try db.create(table: "device") { t in
+                t.column("id", .text).primaryKey()
+                t.column("name", .text).notNull()
+                t.column("platform", .text).notNull()
+                t.column("publicKey", .blob).notNull()
+                t.column("pairedAt", .datetime).notNull()
+                t.column("lastSeenAt", .datetime)
+            }
+        }
+
+        migrator.registerMigration("v5") { db in
+            // Clips received before device badges existed have no source
+            // bundle; tag them by their paired device's name so they get the
+            // phone/computer icon too (see AppIconProvider.deviceBundle).
+            try db.execute(sql: """
+                UPDATE clip
+                SET sourceBundle = 'clipstack.device.' ||
+                    (SELECT platform FROM device WHERE device.name = clip.sourceName LIMIT 1)
+                WHERE sourceBundle IS NULL
+                  AND sourceName IN (SELECT name FROM device)
+                """)
+        }
+
         return migrator
     }
 
@@ -84,6 +122,13 @@ final class AppDatabase {
                 existing.lastUsedAt = Date()
                 existing.sourceBundle = clip.sourceBundle
                 existing.sourceName = clip.sourceName
+                // Same text copied again, this time with formatting: keep the
+                // rich version. Its blob was already written under this hash,
+                // and would otherwise be left on disk with no row using it.
+                if existing.kind == .text, clip.kind == .rtf, existing.dataPath == nil {
+                    existing.kind = .rtf
+                    existing.dataPath = clip.dataPath
+                }
                 try existing.update(db)
                 return false
             } else {
@@ -189,12 +234,13 @@ final class AppDatabase {
     /// Save an edited text body (edit-before-paste). Editing an RTF clip
     /// demotes it to plain text since the rich data no longer matches.
     func updateText(id: String, text: String) throws {
-        try dbQueue.write { db in
-            guard var clip = try Clip.fetchOne(db, key: id) else { return }
+        let droppedBlob: String? = try dbQueue.write { db in
+            guard var clip = try Clip.fetchOne(db, key: id) else { return nil }
+            var dropped: String?
             clip.textContent = text
             clip.byteSize = text.utf8.count
             if clip.kind == .rtf {
-                if let path = clip.dataPath { try? FileManager.default.removeItem(atPath: path) }
+                dropped = clip.dataPath
                 clip.dataPath = nil
                 clip.kind = .text
             }
@@ -207,6 +253,23 @@ final class AppDatabase {
                 clip.contentHash = "edited:" + clip.id
                 try clip.update(db)
             }
+            return dropped
+        }
+        // Remove the old RTF file only after the save committed, and only if
+        // no other clip (e.g. a pinboard copy) still uses it.
+        if let droppedBlob, !(try referencedFilePaths()).contains(droppedBlob) {
+            try? FileManager.default.removeItem(atPath: droppedBlob)
+        }
+    }
+
+    /// Every blob/preview file path that some clip row still points at.
+    func referencedFilePaths() throws -> Set<String> {
+        try dbQueue.read { db in
+            Set(try String.fetchAll(db, sql: """
+                SELECT dataPath FROM clip WHERE dataPath IS NOT NULL
+                UNION
+                SELECT previewPath FROM clip WHERE previewPath IS NOT NULL
+                """))
         }
     }
 
@@ -293,6 +356,38 @@ final class AppDatabase {
             guard let clip = try Clip.fetchOne(db, key: id) else { return nil }
             try clip.delete(db)
             return clip
+        }
+    }
+
+    // MARK: - Paired devices (Wi-Fi sync)
+
+    func pairedDevices() throws -> [PairedDevice] {
+        try dbQueue.read { db in
+            try PairedDevice.order(Column("pairedAt")).fetchAll(db)
+        }
+    }
+
+    /// Insert or replace (re-pairing a known device updates its key).
+    func savePairedDevice(_ device: PairedDevice) throws {
+        try dbQueue.write { db in
+            try device.save(db)
+        }
+    }
+
+    /// Refresh the name/platform a device reported and when it was last seen.
+    func touchPairedDevice(id: String, name: String?, platform: String?) throws {
+        try dbQueue.write { db in
+            guard var device = try PairedDevice.fetchOne(db, key: id) else { return }
+            if let name, !name.isEmpty { device.name = name }
+            if let platform, !platform.isEmpty { device.platform = platform }
+            device.lastSeenAt = Date()
+            try device.update(db)
+        }
+    }
+
+    func deletePairedDevice(id: String) throws {
+        try dbQueue.write { db in
+            _ = try PairedDevice.deleteOne(db, key: id)
         }
     }
 }
