@@ -70,8 +70,15 @@ Protocol and platform limits: [05-lan-sync.md](05-lan-sync.md).
 - [x] Mac: a Finder copy of one image file syncs as the picture.
 - [ ] iOS app (same Flutter app): foreground sync, share extension, later a
       keyboard extension.
-- [ ] Windows / Linux (Flutter desktop): listener + clipboard watcher; the
-      Mac dials out to desktops (lower device id dials).
+- [x] Windows (same Flutter app): always listening, clipboard watcher
+      (sequence number; BMP → PNG), tray icon with close-to-tray, single
+      instance, Inno Setup installer + private-network firewall rule, CI
+      build and smoke test (`.github/workflows/windows.yml`).
+- [ ] Verify Windows on a real PC: phone ↔ PC and Mac ↔ PC over Wi-Fi,
+      SmartScreen, firewall prompt, tray behaviour.
+- [ ] Mac: "Pair with a link" (so a PC's code can pair a Mac), or QR
+      scanning with the Mac's camera; code-signed Windows installer.
+- [ ] Linux (same Flutter app; the desktop code paths already cover it).
 - [ ] Sync pins/pinboards and recent history on connect (v2 protocol).
 - [ ] Optional internet relay for devices on different networks.
 

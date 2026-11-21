@@ -1,0 +1,1 @@
+Now pairs with ClipStack on Windows PCs: tap Pair with your computer and scan the code on the PC's screen. Copies sync both ways, text and images.

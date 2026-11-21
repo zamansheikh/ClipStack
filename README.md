@@ -4,21 +4,22 @@
 
 # ClipStack
 
-**A free, native clipboard manager for macOS — now with Wi-Fi sync to your Android phone.**
+**A free, native clipboard manager for macOS — with Wi-Fi sync to your Android phone and Windows PC.**
 
 [![Latest release](https://img.shields.io/github/v/release/zamansheikh/ClipStack?label=download&color=blue)](https://github.com/zamansheikh/ClipStack/releases/latest)
 [![macOS](https://img.shields.io/badge/macOS-14%2B-lightgrey?logo=apple)](#requirements)
 [![Android](https://img.shields.io/badge/Android-7.0%2B-3DDC84?logo=android&logoColor=white)](#-android-app)
+[![Windows](https://img.shields.io/badge/Windows-10%2B-0078D4?logo=windows&logoColor=white)](#-windows-app)
 [![Swift](https://img.shields.io/badge/Swift-5-orange?logo=swift&logoColor=white)](https://swift.org)
 [![Flutter](https://img.shields.io/badge/Flutter-3.50-02569B?logo=flutter&logoColor=white)](https://flutter.dev)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 Everything you copy — text, links, images, files — captured silently, searchable forever,
-and pasteable anywhere with one keystroke. Copy on your Mac, paste on your phone, and back:
+and pasteable anywhere with one keystroke. Copy on your Mac, paste on your phone or PC, and back:
 clips travel straight between your devices over your own Wi-Fi, end-to-end encrypted.
 No subscription, no account, no cloud.
 
-[**⬇ Download for Mac**](https://github.com/zamansheikh/ClipStack/releases/latest) &nbsp;·&nbsp; [**📱 Android app**](#-android-app)
+[**⬇ Download for Mac**](https://github.com/zamansheikh/ClipStack/releases/latest) &nbsp;·&nbsp; [**📱 Android app**](#-android-app) &nbsp;·&nbsp; [**🪟 Windows app**](#-windows-app)
 
 </div>
 
@@ -51,6 +52,7 @@ No subscription, no account, no cloud.
 - ⚡ **One-tap paste** — turn on the optional "ClipStack paste" Accessibility service and the bubble's Paste types your clipboard (your latest Mac copy) straight into the field you're in. Without it, Paste puts the newest clip on the clipboard for a long-press paste.
 - 🔐 **Private by design** — devices talk directly on your local network. Every connection is end-to-end encrypted (X25519 + ChaCha20-Poly1305), pairing uses a one-time QR code, and nothing is uploaded anywhere.
 - 📱↔📱 **Phone to phone** — pair two phones directly: one taps **Show my pairing code**, the other scans it. No computer needed.
+- 🪟 **Windows PCs too** — the Windows app syncs automatically both ways, text and images, and keeps running in the notification area when you close its window. Your phone pairs by scanning the code on the PC's screen.
 - 🏷️ **Know where it came from** — clips from your phone show a phone badge in your Mac's history.
 
 <p align="center">
@@ -99,10 +101,20 @@ Pairing two phones? On one, open **Settings → Show my pairing code**; scan it 
 
 > Android only lets apps read the clipboard while they're open, so sending *from* the phone takes one tap. Receiving from the Mac is automatic, even in the background.
 
+### 🪟 Windows app
+
+1. Download **`ClipStack-Windows-x.y.z-setup.exe`** from [**Releases**](https://github.com/zamansheikh/ClipStack/releases/latest) and run it. The installer isn't code-signed yet, so Windows SmartScreen may warn you: click **More info → Run anyway**. (Prefer no installer? Unzip **`ClipStack-Windows-x.y.z-portable.zip`** and run `ClipStack.exe`.)
+2. **Pair your phone:** in ClipStack on the PC, click **Pair a phone or Mac → Show pairing code**, then in the Android app tap **Pair with your computer** and scan it.
+3. **Pair your Mac:** on the Mac, open **Settings → Devices → Pair a Device…** and click **Can't scan? Copy pairing link**. Get that link to the PC (email it to yourself, for example), then paste it under **Pair with a Mac** and click **Pair**.
+4. Copy anything — text or an image — on any paired device and it's on the others. Closing the window keeps ClipStack syncing from the notification area; right-click its icon there to quit.
+
+> The installer allows ClipStack through Windows Firewall on **private** networks only. If your phone can't find the PC, make sure Windows treats your Wi-Fi as a private network (**Settings → Network & internet → Wi-Fi → your network → Private**).
+
 ### Requirements
 
 - **Mac:** macOS 14 (Sonoma) or later, Apple Silicon.
 - **Android:** Android 7.0 or later.
+- **Windows:** Windows 10 (version 1903) or later, 64-bit.
 - **Sync:** both devices on the same Wi-Fi network. Some guest, hotel and campus networks block devices from seeing each other.
 
 ## 🛠 Building from source
@@ -130,6 +142,15 @@ flutter run --release
 
 Release builds are signed with the key named in `android/key.properties` (git-ignored); without it they fall back to the debug key.
 
+**Windows app** — on Windows with Flutter 3.50+ and Visual Studio 2022 (Desktop development with C++):
+
+```sh
+cd clients/clipstack_app
+flutter build windows --release
+```
+
+The installer is built with [Inno Setup 6](https://jrsoftware.org/isinfo.php) from [`windows/installer/clipstack.iss`](clients/clipstack_app/windows/installer/clipstack.iss); the [Windows workflow](.github/workflows/windows.yml) does both and attaches the results to a release (**Actions → Windows → Run workflow**, with the release tag).
+
 **Sync protocol tests:**
 
 ```sh
@@ -144,7 +165,7 @@ dart test
 | [`ClipStack/`](ClipStack) | macOS app — Swift, SwiftUI, GRDB |
 | [`ClipStack/Sync/`](ClipStack/Sync) | Wi-Fi sync on the Mac: Bonjour listener, pairing, encrypted sessions |
 | [`clients/clipstack_sync/`](clients/clipstack_sync) | Pure-Dart sync protocol package + command-line test peer |
-| [`clients/clipstack_app/`](clients/clipstack_app) | Flutter app (Android today; iOS, Windows and Linux next) |
+| [`clients/clipstack_app/`](clients/clipstack_app) | Flutter app for Android and Windows (iOS and Linux next) |
 | [`docs/`](docs) | Specs, roadmap, sync protocol, store assets |
 
 ## 🗺 Roadmap & docs
@@ -158,7 +179,7 @@ dart test
 | [docs/05-lan-sync.md](docs/05-lan-sync.md) | Wi-Fi sync protocol v1: discovery, pairing, encryption, test hooks |
 | [docs/store/](docs/store) | Google Play listing graphics and how to regenerate them |
 
-**Up next:** ClipStack on Google Play, the iPhone app, Windows & Linux desktop apps, and Developer ID signing + notarization for the Mac (no more Terminal command).
+**Up next:** ClipStack on Google Play, the iPhone app, a Linux build, a code-signed Windows installer, and Developer ID signing + notarization for the Mac (no more Terminal command).
 
 ## 🤝 Contributing
 

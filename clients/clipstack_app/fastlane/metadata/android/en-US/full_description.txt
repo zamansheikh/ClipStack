@@ -1,10 +1,10 @@
-ClipStack brings your Mac clipboard to your Android phone — and back.
+ClipStack brings your Mac or Windows PC clipboard to your Android phone — and back.
 
 Copy something on your Mac and it's on your phone's clipboard a moment later, ready to paste. Share a photo, a link or a note from your phone and it lands on your Mac. No account, no cloud, no subscription: your devices talk directly over your own Wi-Fi, end-to-end encrypted.
 
 ★ HOW IT WORKS
-1. Install the free ClipStack app on your Mac: github.com/zamansheikh/ClipStack
-2. On the Mac, open Settings → Devices → Pair a Device.
+1. Install the free ClipStack app on your Mac or Windows PC: github.com/zamansheikh/ClipStack
+2. On the Mac, open Settings → Devices → Pair a Device. On the PC, click Pair a phone or Mac → Show pairing code.
 3. Scan the QR code with ClipStack on your phone. That's it.
 
 ★ FEATURES
@@ -12,6 +12,7 @@ Copy something on your Mac and it's on your phone's clipboard a moment later, re
 • Phone → Mac in one tap: tap Send clipboard, use Share → ClipStack from any app, or just open ClipStack and it sends your latest copy.
 • Screenshots straight to your phone: copy an image on your Mac and paste it into any chat.
 • Phone to phone: pair two phones directly. One shows its pairing code, the other scans it.
+• Windows PCs too: copies on the PC reach your phone automatically, text and images.
 • Floating bubble: send your clipboard or paste from any app with one tap. Drag it to ✕ to hide it.
 • One-tap paste (optional): turn on "ClipStack paste" in Accessibility and the bubble pastes straight into the field you're typing in.
 • A beautiful history: every synced clip in a clean grid with filters for text, links and images. Tap to copy, hold for details.
@@ -25,7 +26,7 @@ Copy something on your Mac and it's on your phone's clipboard a moment later, re
 • Password-manager copies on the Mac are never captured or shared.
 
 ★ GOOD TO KNOW
-• Needs ClipStack for macOS (free) on the same Wi-Fi network.
+• Needs ClipStack for macOS or Windows (free) on the same Wi-Fi network — or a second phone.
 • Android only lets apps read the clipboard while they are open, so sending from the phone takes one tap (or the share sheet). Receiving from the Mac is automatic.
 • Some guest, hotel and campus networks stop devices from seeing each other.
 
