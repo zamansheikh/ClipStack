@@ -45,11 +45,29 @@ dogfooding it yourself is the fastest way to find what matters.
 
 **Exit criteria:** a Paste user switching over misses nothing important on Mac.
 
-## Phase 3 — Sync & iOS (later)
+## Phase 3 — Wi-Fi sync across platforms
 
-- [ ] CloudKit sync (history + pinboards, image size cap).
-- [ ] iOS app: browse/search, keyboard extension, share extension.
-- [ ] App Store sandbox audit if distributing there.
+Replaces the earlier CloudKit plan: CloudKit can't reach Android or Windows.
+Protocol and platform limits: [05-lan-sync.md](05-lan-sync.md).
+
+- [x] Protocol v1 spec (pairing by QR, X25519 + ChaCha20-Poly1305, mDNS).
+- [x] Mac: listener + Bonjour, pairing sheet, Devices settings, sends local
+      copies, applies received clips (`ClipStack/Sync/`).
+- [x] `clients/clipstack_sync`: pure-Dart protocol package + CLI test peer;
+      byte-for-byte test vector shared with the Swift side.
+- [x] Android app (`clients/clipstack_app`, Flutter): QR / link pairing,
+      foreground service, share sheet (text + images), send on open, history.
+      Verified Mac ↔ emulator end-to-end.
+- [ ] Verify on a real phone over Wi-Fi: Bonjour discovery, the macOS Local
+      Network prompt, the Keychain-stored identity, QR scanning.
+- [ ] Android: Quick Settings tile "Send clipboard"; move the connection into
+      the service so swiping the app away doesn't stop sync.
+- [ ] iOS app (same Flutter app): foreground sync, share extension, later a
+      keyboard extension.
+- [ ] Windows / Linux (Flutter desktop): listener + clipboard watcher; the
+      Mac dials out to desktops (lower device id dials).
+- [ ] Sync pins/pinboards and recent history on connect (v2 protocol).
+- [ ] Optional internet relay for devices on different networks.
 
 ## Decisions already made
 
