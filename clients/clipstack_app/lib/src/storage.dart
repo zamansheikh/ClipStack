@@ -46,6 +46,7 @@ class HistoryItem {
     required this.at,
     this.text,
     this.imagePath,
+    this.devicePlatform,
   });
 
   final String id;
@@ -55,6 +56,10 @@ class HistoryItem {
 
   /// The other device: where it came from, or where it was sent.
   final String deviceName;
+
+  /// Platform of [deviceName] ("macos", "android"…) for its icon; null for
+  /// clips saved before phones could pair with each other.
+  final String? devicePlatform;
   final bool incoming;
   final DateTime at;
 
@@ -64,6 +69,7 @@ class HistoryItem {
         'text': text,
         'imagePath': imagePath,
         'deviceName': deviceName,
+        'devicePlatform': devicePlatform,
         'incoming': incoming,
         'at': at.millisecondsSinceEpoch,
       };
@@ -74,6 +80,7 @@ class HistoryItem {
         text: json['text'] as String?,
         imagePath: json['imagePath'] as String?,
         deviceName: json['deviceName'] as String,
+        devicePlatform: json['devicePlatform'] as String?,
         incoming: json['incoming'] as bool,
         at: DateTime.fromMillisecondsSinceEpoch(json['at'] as int),
       );

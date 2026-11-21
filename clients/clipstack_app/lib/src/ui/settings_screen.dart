@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../storage.dart';
 import '../sync_controller.dart';
+import 'my_code_screen.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
@@ -16,7 +17,7 @@ class SettingsScreen extends StatelessWidget {
       context: context,
       builder: (dialog) => AlertDialog(
         title: Text('Remove ${peer.device.name}?'),
-        content: const Text('Clips will stop syncing with this computer. You can pair it again any time.'),
+        content: const Text('Clips will stop syncing with this device. You can pair it again any time.'),
         actions: [
           TextButton(onPressed: () => Navigator.of(dialog).pop(false), child: const Text('Cancel')),
           TextButton(
@@ -64,7 +65,7 @@ class SettingsScreen extends StatelessWidget {
           children: [
             SettingsGroup(
               title: 'This phone',
-              footer: 'Your computers see this phone by this name.',
+              footer: 'Other devices see this phone by this name.',
               children: [
                 ListTile(
                   leading: const IconTile(icon: Icons.smartphone_rounded, gradient: true),
@@ -74,11 +75,12 @@ class SettingsScreen extends StatelessWidget {
               ],
             ),
             SettingsGroup(
-              title: 'Computers',
+              title: 'Devices',
+              footer: 'Pair your Mac, or phones with each other. Clips go to every paired device that is connected.',
               children: [
                 for (final peer in controller.peers)
                   ListTile(
-                    leading: const IconTile(icon: Icons.laptop_mac_rounded),
+                    leading: IconTile(icon: deviceIcon(peer.device.platform)),
                     title: Text(peer.device.name, maxLines: 1, overflow: TextOverflow.ellipsis),
                     subtitle: Row(children: [
                       PulseDot(
@@ -96,9 +98,22 @@ class SettingsScreen extends StatelessWidget {
                   ),
                 ListTile(
                   leading: const IconTile(icon: Icons.qr_code_scanner_rounded),
-                  title: Text(controller.peers.isEmpty ? 'Pair a computer' : 'Pair another computer'),
+                  title: const Text('Scan a pairing code'),
+                  subtitle: const Text('From your Mac or another phone'),
                   trailing: Icon(Icons.chevron_right_rounded, color: context.mutedText),
                   onTap: onPair,
+                ),
+                ListTile(
+                  leading: const IconTile(icon: Icons.qr_code_2_rounded),
+                  title: const Text('Show my pairing code'),
+                  subtitle: const Text('Let another phone scan this one'),
+                  trailing: Icon(Icons.chevron_right_rounded, color: context.mutedText),
+                  onTap: () async {
+                    final peer = await Navigator.of(context).push<PairedPeer>(
+                      MaterialPageRoute(builder: (_) => MyCodeScreen(controller: controller)),
+                    );
+                    if (peer != null && context.mounted) showToast(context, 'Paired with ${peer.device.name}');
+                  },
                 ),
               ],
             ),

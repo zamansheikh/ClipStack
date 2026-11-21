@@ -60,6 +60,8 @@ Protocol and platform limits: [05-lan-sync.md](05-lan-sync.md).
       Verified Mac ↔ emulator end-to-end.
 - [ ] Verify on a real phone over Wi-Fi: Bonjour discovery, the macOS Local
       Network prompt, the Keychain-stored identity, QR scanning.
+- [x] Phone ↔ phone pairing: phones listen while paired with a phone or
+      showing their code; either side dials; lower id wins duplicates.
 - [ ] Android: Quick Settings tile "Send clipboard"; move the connection into
       the service so swiping the app away doesn't stop sync.
 - [ ] iOS app (same Flutter app): foreground sync, share extension, later a

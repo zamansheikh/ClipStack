@@ -24,7 +24,7 @@ package `clients/clipstack_sync/`.
 |----------|--------------------|------------------------|-------|
 | macOS | yes (pasteboard watcher) | yes, sets the clipboard | listener + Bonjour advertiser |
 | Windows / Linux | yes | yes | Flutter desktop, planned |
-| Android | **no** — Android 10+ blocks background clipboard reads | yes, while the app's foreground service runs | send = share sheet, in-app button, or auto-send when the app opens |
+| Android | **no** — Android 10+ blocks background clipboard reads | yes, while the app's foreground service runs | send = share sheet, in-app button, or auto-send when the app opens; pairs with other phones via "Show my pairing code" |
 | iOS | no (no background clipboard access) | only while the app is open | share extension to send; Mac↔iPhone already sync via Universal Clipboard with the same Apple ID |
 
 ## Discovery
@@ -38,11 +38,15 @@ package `clients/clipstack_sync/`.
   work through the host addresses in the pairing link and the last address a
   peer was seen at.
 
-v1 topology: desktops listen and advertise; phones connect to them. A desktop
-that later connects to another desktop does so only when its device id sorts
-lower (plain string comparison), so two desktops never dial each other at the
-same time. When a new session with a peer becomes ready, any older session
-with that peer is closed.
+Topology: desktops always listen and advertise. Phones listen and advertise
+too while they are paired with another phone or are showing their own pairing
+code (phones paired only with computers stay invisible), and they always dial
+computers. Between two devices that both listen, **either may dial — but only
+while it has no session with that peer**, so whichever can reach the other
+connects (a phone behind a router can still dial out). If both dial at once and
+two sessions end up open, both keep **the one dialled by the lower device id**
+(plain string comparison) and close the other; because each side only redials
+when it has no session, this settles without flapping.
 
 ## Identity
 
@@ -134,13 +138,21 @@ empty). Receivers ignore unknown fields and unknown message types.
 
 | `t` | Header fields | Body |
 |-----|---------------|------|
-| `hello` | `device: {id, name, platform}`, `app` (version string) | — |
-| `pair` | `token`, `device: {id, name, platform}` | — |
-| `paired` | `device: {id, name, platform}` | — |
+| `hello` | `device: {id, name, platform}`, `app` (version string), optional `port` | — |
+| `pair` | `token`, `device: {id, name, platform}`, optional `port` | — |
+| `paired` | `device: {id, name, platform}`, optional `port` | — |
 | `clip` | `id` (UUID), `origin` (device id), `kind` (`text`\|`url`\|`rtf`\|`image`), `text` (all kinds but `image`), `mime` (when a body is present: `text/rtf` or `image/png`), `createdAt` (ms since Unix epoch) | RTF bytes or PNG bytes |
 | `ping` / `pong` | — | — |
 | `unpair` | — (sender removed this pairing; receiver deletes it and closes) | — |
 | `error` | `code` (`bad_token`, `not_paired`, `too_large`, `unsupported`), `message` | — |
+
+`port` is the sender's own listening port, sent by devices that accept
+connections (phones paired with phones). The receiver stores it with the
+address it saw the connection come from, so it can dial back later. Devices
+that don't listen omit it; receivers that don't dial ignore it.
+
+A phone's pairing link carries its Wi-Fi addresses (cellular and VPN
+interfaces are left out) and the same single-use, 5-minute token rules apply.
 
 Keep-alive: send `ping` after 25 s without receiving anything; close after
 60 s without receiving anything.

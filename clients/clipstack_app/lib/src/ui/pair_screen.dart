@@ -132,11 +132,11 @@ class _PairScreenState extends State<PairScreen> with SingleTickerProviderStateM
               right: 24,
               bottom: constraints.maxHeight - window.top + 28,
               child: Column(children: [
-                Text('Scan the code on your computer',
+                Text('Scan a pairing code',
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Colors.white)),
                 const SizedBox(height: 6),
-                Text('ClipStack → Settings → Devices → Pair a Device',
+                Text('Mac: Settings → Devices → Pair a Device  ·  Phone: Show my code',
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.white70)),
               ]),

@@ -42,6 +42,7 @@ dependencies:
   path_provider: ^2.1.6
   clipstack_sync:
     path: ../clipstack_sync
+  qr_flutter: ^4.1.0
 
 dev_dependencies:
   flutter_test:

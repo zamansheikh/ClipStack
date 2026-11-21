@@ -48,6 +48,7 @@ No subscription, no account, no cloud.
 - 📤 **Phone → Mac in one tap** — tap **Send clipboard**, use **Share → ClipStack** from any app, or just open ClipStack and it sends your latest copy.
 - 🖼️ **Images too** — copy a screenshot on your Mac and paste it into any chat on your phone; share a photo from your phone to your Mac's clipboard.
 - 🔐 **Private by design** — devices talk directly on your local network. Every connection is end-to-end encrypted (X25519 + ChaCha20-Poly1305), pairing uses a one-time QR code, and nothing is uploaded anywhere.
+- 📱↔📱 **Phone to phone** — pair two phones directly: one taps **Show my pairing code**, the other scans it. No computer needed.
 - 🏷️ **Know where it came from** — clips from your phone show a phone badge in your Mac's history.
 
 <p align="center">

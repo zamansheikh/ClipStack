@@ -198,7 +198,7 @@ class _Footer extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
       child: Row(children: [
         Icon(
-          item.incoming ? Icons.laptop_mac_rounded : Icons.arrow_upward_rounded,
+          item.incoming ? deviceIcon(item.devicePlatform) : Icons.arrow_upward_rounded,
           size: 13,
           color: item.incoming ? Theme.of(context).colorScheme.primary : Brand.success,
         ),
@@ -238,7 +238,7 @@ Future<void> showClipDetails(BuildContext context, HistoryItem item, SyncControl
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
             child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
               Row(children: [
-                IconTile(icon: item.incoming ? Icons.laptop_mac_rounded : Icons.arrow_upward_rounded, size: 36),
+                IconTile(icon: item.incoming ? deviceIcon(item.devicePlatform) : Icons.arrow_upward_rounded, size: 36),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

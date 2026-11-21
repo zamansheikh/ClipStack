@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:bonsoir/bonsoir.dart';
 import 'package:clipstack_sync/clipstack_sync.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -12,8 +13,9 @@ import 'storage.dart';
 
 enum LinkState { notPaired, searching, connected }
 
-/// Everything the app does: pairing, staying connected to paired computers,
-/// sending (button, share sheet, on open) and applying received clips.
+/// Everything the app does: pairing (with computers and other phones),
+/// staying connected, sending (button, share sheet, on open) and applying
+/// received clips.
 class SyncController extends ChangeNotifier with WidgetsBindingObserver {
   SyncController({NativeBridge? native, AppStorage? storage})
       : native = native ?? NativeBridge(),
@@ -55,7 +57,7 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
 
   bool isConnected(PairedPeer peer) => _sessions.containsKey(peer.device.id);
 
-  /// This phone's name as computers see it.
+  /// This phone's name as other devices see it.
   String get phoneName => _identity?.device.name ?? 'This phone';
 
   /// Try every paired computer now instead of waiting out the backoff.
@@ -68,7 +70,7 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
   String get connectedNames => peers.where(isConnected).map((p) => p.device.name).join(', ');
 
   String get statusText => switch (state) {
-        LinkState.notPaired => 'Not paired with a computer yet',
+        LinkState.notPaired => 'Not paired yet',
         LinkState.searching => 'Looking for ${peers.map((p) => p.device.name).join(', ')}…',
         LinkState.connected => 'Connected to $connectedNames',
       };
@@ -88,10 +90,12 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
       _handleIntent(intent);
     };
 
+    discovery.ownId = _identity!.device.id;
     discovery.found.listen((id) => _loops[id]?.wake());
     unawaited(discovery.start().catchError((Object e) => debugPrint('ClipStack: discovery unavailable: $e')));
+    await _updateListening();
     for (final peer in peers) {
-      _startLoop(peer);
+      _startLoop(peer.device.id);
     }
     if (peers.isNotEmpty) unawaited(native.startKeepAlive(statusText));
 
@@ -118,7 +122,8 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
 
   // MARK: - Pairing
 
-  /// Pair using a `clipstack://pair?...` link (QR code, camera app, or pasted).
+  /// Pair using a `clipstack://pair?...` link (QR code, camera app, or pasted)
+  /// from a computer or from another phone's "Show my pairing code".
   Future<PairedPeer> pair(String linkText) async {
     final link = PairingLink.parse(linkText);
     final found = discovery.lookup(link.device.id);
@@ -139,6 +144,7 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
           expectedPeerId: link.device.id,
           pairingToken: link.token,
           appVersion: appVersion,
+          listenPort: listenPort,
         );
         final peer = PairedPeer(
           device: session.peer,
@@ -146,18 +152,12 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
           hosts: [target.host, ...link.hosts.where((h) => h != target.host)],
           port: target.port,
         );
-        await _forget(peer.device.id, notifyPeer: false); // re-pairing replaces the old entry
-        peers = [...peers, peer];
-        await storage.savePeers(peers);
-        _startLoop(peer, initial: session);
-        unawaited(native.requestNotificationPermission());
-        unawaited(native.startKeepAlive(statusText));
-        notifyListeners();
+        await _addPeer(peer, session);
         return peer;
       } on ProtocolException catch (error) {
-        // The computer answered and refused: no point trying other addresses.
+        // The other device answered and refused: no point trying other addresses.
         throw error.code == 'bad_token'
-            ? const FormatException('That pairing code has expired. Open "Pair a Device" again on your computer.')
+            ? const FormatException('That pairing code has expired. Show a new code on the other device.')
             : FormatException('Pairing failed: ${error.message}');
       } on Object catch (error) {
         lastError = error;
@@ -166,7 +166,22 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
     throw FormatException("Couldn't reach ${link.device.name}. Is it on the same Wi-Fi? ($lastError)");
   }
 
-  /// Remove a pairing on both sides (the computer is told if it's online).
+  /// Store a new pairing (replacing an old one with the same device), adopt
+  /// the session that paired, then start the reconnect loop. Adopting first
+  /// matters: a loop that saw no session would dial a second connection.
+  Future<void> _addPeer(PairedPeer peer, SyncSession session) async {
+    await _forget(peer.device.id, notifyPeer: false);
+    peers = [...peers, peer];
+    await storage.savePeers(peers);
+    _adopt(peer.device.id, session);
+    _startLoop(peer.device.id);
+    await _updateListening();
+    unawaited(native.requestNotificationPermission());
+    unawaited(native.startKeepAlive(statusText));
+    notifyListeners();
+  }
+
+  /// Remove a pairing on both sides (the other device is told if it's online).
   Future<void> unpair(PairedPeer peer) => _forget(peer.device.id, notifyPeer: true);
 
   Future<void> _forget(String deviceId, {required bool notifyPeer}) async {
@@ -181,26 +196,195 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
     }
     final before = peers.length;
     peers = peers.where((p) => p.device.id != deviceId).toList();
-    if (peers.length != before) await storage.savePeers(peers);
+    if (peers.length != before) {
+      await storage.savePeers(peers);
+      await _updateListening();
+    }
     if (peers.isEmpty) unawaited(native.stopKeepAlive());
     notifyListeners();
   }
 
-  // MARK: - Connections
+  // MARK: - Pairing code (another phone scans this one)
 
-  void _startLoop(PairedPeer peer, {SyncSession? initial}) {
-    final loop = _PeerLoop();
-    _loops[peer.device.id] = loop;
-    unawaited(_run(peer.device.id, loop, initial));
+  static const pairingCodeLifetime = Duration(minutes: 5);
+  Uint8List? _codeToken;
+  DateTime _codeExpires = DateTime(0);
+  final _pairedByCode = StreamController<PairedPeer>.broadcast();
+
+  /// Fires when another device pairs using this phone's code.
+  Stream<PairedPeer> get pairedByCode => _pairedByCode.stream;
+  DateTime get pairingCodeExpires => _codeExpires;
+
+  /// Opens a pairing window and returns the one-time link to show as a QR
+  /// code. The token is single-use and expires after [pairingCodeLifetime].
+  Future<PairingLink> openPairingCode() async {
+    final rng = Random.secure();
+    _codeToken = Uint8List.fromList(List.generate(16, (_) => rng.nextInt(256)));
+    _codeExpires = DateTime.now().add(pairingCodeLifetime);
+    await _updateListening();
+    final port = listenPort;
+    if (port == null) throw StateError("This phone can't accept connections right now");
+    final hosts = await _localAddresses();
+    if (hosts.isEmpty) throw StateError('Connect to Wi-Fi to show a pairing code');
+    return PairingLink(
+      device: _identity!.device,
+      publicKey: _identity!.publicKey,
+      token: _codeToken!,
+      port: port,
+      hosts: hosts,
+    );
   }
 
-  /// Keeps one session per paired computer: connect, serve until it drops,
-  /// back off, repeat. Discovery and app resume cut the backoff short.
-  Future<void> _run(String deviceId, _PeerLoop loop, SyncSession? initial) async {
+  Future<void> closePairingCode() async {
+    _codeToken = null;
+    await _updateListening();
+  }
+
+  bool get _pairingOpen => _codeToken != null && DateTime.now().isBefore(_codeExpires);
+
+  bool _consumePairingToken(Uint8List token) {
+    final expected = _codeToken;
+    if (expected == null || !_pairingOpen || token.length != expected.length) return false;
+    var diff = 0;
+    for (var i = 0; i < token.length; i++) {
+      diff |= token[i] ^ expected[i];
+    }
+    if (diff != 0) return false;
+    _codeToken = null; // single use
+    return true;
+  }
+
+  /// This phone's IPv4 addresses, Wi-Fi first (cellular and VPN skipped:
+  /// another phone on the same Wi-Fi can't reach those).
+  static Future<List<String>> _localAddresses() async {
+    final wifi = <String>[], other = <String>[];
+    for (final interface in await NetworkInterface.list(type: InternetAddressType.IPv4)) {
+      final name = interface.name.toLowerCase();
+      if (name.startsWith('rmnet') || name.startsWith('ccmni') || name.startsWith('tun')) continue;
+      for (final address in interface.addresses) {
+        if (address.isLoopback || address.isLinkLocal) continue;
+        (name.startsWith('wlan') || name.startsWith('en') ? wifi : other).add(address.address);
+      }
+    }
+    return [...wifi, ...other];
+  }
+
+  // MARK: - Listening (phones that pair with each other)
+
+  ServerSocket? _server;
+  BonsoirBroadcast? _advert;
+
+  /// The port other phones dial; null while not listening.
+  int? get listenPort => _server?.port;
+
+  bool isComputer(PairedPeer peer) =>
+      const {Platforms.macos, Platforms.windows, Platforms.linux}.contains(peer.device.platform);
+
+  /// Listen and advertise only while it's useful: a phone is paired, or this
+  /// phone is showing its pairing code. Paired only with computers, the
+  /// phone stays invisible on the network.
+  Future<void> _updateListening() async {
+    final needed = _pairingOpen || peers.any((p) => !isComputer(p));
+    if (needed && _server == null) {
+      await _startListening();
+    } else if (!needed && _server != null) {
+      await _stopListening();
+    }
+  }
+
+  Future<void> _startListening() async {
+    try {
+      try {
+        _server = await ServerSocket.bind(InternetAddress.anyIPv4, defaultPort);
+      } on SocketException {
+        _server = await ServerSocket.bind(InternetAddress.anyIPv4, 0); // 47474 taken
+      }
+    } on SocketException catch (error) {
+      debugPrint('ClipStack: cannot listen: $error');
+      return;
+    }
+    _server!.listen(_accept, onError: (Object e) => debugPrint('ClipStack: listener error: $e'));
+    debugPrint('ClipStack: listening on ${_server!.port}');
+    final me = _identity!.device;
+    final advert = BonsoirBroadcast(
+      service: BonsoirService(
+        name: me.name,
+        type: serviceType,
+        port: _server!.port,
+        attributes: {'v': '1', 'id': me.id, 'name': me.name, 'pf': me.platform},
+      ),
+    );
+    _advert = advert;
+    try {
+      await advert.initialize();
+      await advert.start();
+    } on Object catch (error) {
+      debugPrint('ClipStack: advertising failed: $error'); // still reachable by address
+    }
+  }
+
+  Future<void> _stopListening() async {
+    await _advert?.stop().catchError((_) {});
+    _advert = null;
+    await _server?.close();
+    _server = null;
+    debugPrint('ClipStack: stopped listening');
+  }
+
+  Future<void> _accept(Socket socket) async {
+    try {
+      final session = await SyncSession.accept(
+        socket,
+        identity: _identity!,
+        policy: _PhonePolicy(this),
+        appVersion: appVersion,
+        listenPort: listenPort,
+      );
+      if (session.pairedNow) {
+        final peer = PairedPeer(
+          device: session.peer,
+          publicKey: session.peerStaticKey,
+          hosts: [session.remoteAddress],
+          port: session.peerListenPort ?? defaultPort,
+        );
+        await _addPeer(peer, session);
+        _pairedByCode.add(peer);
+        return;
+      }
+      if (session.peerListenPort != null) {
+        await _rememberAddress(
+            session.peer.id, (host: session.remoteAddress, port: session.peerListenPort!), session.peer);
+      }
+      _adopt(session.peer.id, session);
+    } on Object catch (error) {
+      debugPrint('ClipStack: incoming connection refused: $error');
+    }
+  }
+
+  // MARK: - Connections
+
+  void _startLoop(String deviceId) {
+    _loops.remove(deviceId)?.stop();
+    final loop = _PeerLoop();
+    _loops[deviceId] = loop;
+    unawaited(_run(deviceId, loop));
+  }
+
+  /// Keeps this phone connected to one paired device. Either side may dial —
+  /// whoever can reach the other does (a phone behind a router can still dial
+  /// out) — and while a session exists, dialled or accepted, the loop waits.
+  /// Discovery and app resume cut the backoff short.
+  Future<void> _run(String deviceId, _PeerLoop loop) async {
     var backoff = 1;
-    var session = initial;
     while (!loop.stopped) {
-      session ??= await _connect(deviceId);
+      final current = _sessions[deviceId];
+      if (current != null && current.isOpen) {
+        await Future.any([current.done, loop.stopped$]);
+        backoff = 1;
+        if (!loop.stopped) await loop.sleep(const Duration(seconds: 1));
+        continue;
+      }
+      final session = await _connect(deviceId);
       if (loop.stopped) {
         await session?.close();
         return;
@@ -211,33 +395,50 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
         continue;
       }
       backoff = 1;
-      final peer = _peer(deviceId);
-      if (peer == null) {
-        await session.close();
+      _adopt(deviceId, session);
+    }
+  }
+
+  /// Make [session] the live connection to [deviceId]. If both sides dialled
+  /// at once, keep the session dialled by the lower device id — both ends
+  /// apply the same rule, so they agree on which one survives.
+  void _adopt(String deviceId, SyncSession session) {
+    final peer = _peer(deviceId);
+    if (peer == null) {
+      session.close();
+      return;
+    }
+    final existing = _sessions[deviceId];
+    if (existing != null && existing.isOpen && existing != session) {
+      String dialer(SyncSession s) => s.isInitiator ? _identity!.device.id : deviceId;
+      final keepNew = dialer(existing) == dialer(session) || dialer(session).compareTo(dialer(existing)) < 0;
+      if (!keepNew) {
+        session.close();
         return;
       }
-      _sessions[deviceId] = session;
-      _statusChanged();
-      // One at a time, in order: a big image must not let a later text clip
-      // finish first (wrong clipboard, lost history update).
-      final subscription = session.clips.listen((clip) {
-        _receiveChain = _receiveChain
-            .then((_) => _receive(peer, clip))
-            .catchError((Object e) => debugPrint('ClipStack: applying a clip failed: $e'));
-      });
-      await session.done;
+      existing.close();
+    }
+    _sessions[deviceId] = session;
+    _statusChanged();
+    // One at a time, in order: a big image must not let a later text clip
+    // finish first (wrong clipboard, lost history update).
+    final subscription = session.clips.listen((clip) {
+      _receiveChain = _receiveChain
+          .then((_) => _receive(peer, clip))
+          .catchError((Object e) => debugPrint('ClipStack: applying a clip failed: $e'));
+    });
+    session.done.then((_) async {
       await subscription.cancel();
-      if (_sessions[deviceId] == session) _sessions.remove(deviceId);
       debugPrint('ClipStack: session with ${peer.device.name} ended: ${session.closeReason}');
-      if (session.peerUnpaired) {
+      if (_sessions[deviceId] == session) {
+        _sessions.remove(deviceId);
+        _statusChanged();
+      }
+      if (session.peerUnpaired && _peer(deviceId) != null) {
         _messages.add('${peer.device.name} removed this phone');
         await _forget(deviceId, notifyPeer: false);
-        return;
       }
-      session = null;
-      _statusChanged();
-      await loop.sleep(const Duration(seconds: 1));
-    }
+    });
   }
 
   Future<SyncSession?> _connect(String deviceId) async {
@@ -249,6 +450,9 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
       for (final host in peer.hosts) (host: host, port: peer.port),
     };
     for (final target in targets) {
+      // A loopback address on our own port is this phone's listener (seen
+      // when the peer reached us through a local tunnel), not the peer.
+      if (target.port == listenPort && (InternetAddress.tryParse(target.host)?.isLoopback ?? false)) continue;
       try {
         final session = await SyncSession.connect(
           host: target.host,
@@ -257,6 +461,7 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
           peerStaticKey: peer.publicKey,
           expectedPeerId: deviceId,
           appVersion: appVersion,
+          listenPort: listenPort,
           timeout: const Duration(seconds: 5),
         );
         await _rememberAddress(deviceId, target, session.peer);
@@ -268,7 +473,7 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
     return null;
   }
 
-  /// Put the address that worked first, and pick up a renamed computer.
+  /// Put the address that worked first, and pick up a renamed device.
   Future<void> _rememberAddress(String deviceId, PeerAddress address, DeviceInfo device) async {
     final index = peers.indexWhere((p) => p.device.id == deviceId);
     if (index < 0) return;
@@ -303,6 +508,7 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
   // MARK: - Receiving
 
   Future<void> _receive(PairedPeer peer, ClipMessage clip) async {
+    debugPrint('ClipStack: received ${clip.kind} from ${peer.device.name}'); // never the content
     String? imagePath;
     switch (clip.kind) {
       case ClipKinds.image:
@@ -319,6 +525,7 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
       text: clip.text,
       imagePath: imagePath,
       deviceName: peer.device.name,
+      devicePlatform: peer.device.platform,
       incoming: true,
       at: DateTime.now(),
     ));
@@ -370,7 +577,7 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<List<String>> _broadcast(ClipMessage clip) async {
     if (!await _waitForConnection(const Duration(seconds: 6))) {
-      throw StateError(peers.isEmpty ? 'Pair with a computer first' : "Can't reach ${peers.first.device.name} right now");
+      throw StateError(peers.isEmpty ? 'Pair a device first' : "Can't reach ${peers.first.device.name} right now");
     }
     final names = <String>[];
     for (final entry in _sessions.entries.toList()) {
@@ -501,7 +708,9 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
       session.close();
     }
     discovery.stop();
+    _stopListening();
     _messages.close();
+    _pairedByCode.close();
     super.dispose();
   }
 }
@@ -510,6 +719,10 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
 class _PeerLoop {
   bool stopped = false;
   Completer<void>? _wake;
+  final _stopped = Completer<void>();
+
+  /// Completes when the loop is stopped (the pairing was removed).
+  Future<void> get stopped$ => _stopped.future;
 
   Future<void> sleep(Duration duration) {
     final wake = _wake = Completer<void>();
@@ -524,6 +737,27 @@ class _PeerLoop {
 
   void stop() {
     stopped = true;
+    if (!_stopped.isCompleted) _stopped.complete();
     wake();
+  }
+}
+
+/// Whom this phone lets in when another phone dials it.
+class _PhonePolicy implements ResponderPolicy {
+  _PhonePolicy(this._controller);
+  final SyncController _controller;
+
+  @override
+  Uint8List? pairedKey(String deviceId) => _controller._peer(deviceId)?.publicKey;
+
+  @override
+  bool get pairingOpen => _controller._pairingOpen;
+
+  @override
+  bool consumePairingToken(Uint8List token) => _controller._consumePairingToken(token);
+
+  @override
+  void onPaired(DeviceInfo device, Uint8List staticKey) {
+    // Stored once accept() returns, together with the peer's address.
   }
 }

@@ -183,5 +183,13 @@ String timeAgo(DateTime at) {
   return '${d.inDays} d ago';
 }
 
+/// Icon for a paired device's platform ("macos", "android"…). Clips saved
+/// before phones could pair have no platform: they came from a computer.
+IconData deviceIcon(String? platform) => switch (platform) {
+      'android' || 'ios' => Icons.smartphone_rounded,
+      'windows' || 'linux' => Icons.desktop_windows_rounded,
+      _ => Icons.laptop_mac_rounded,
+    };
+
 /// Light haptic tick for taps that change something.
 void tick() => HapticFeedback.lightImpact();

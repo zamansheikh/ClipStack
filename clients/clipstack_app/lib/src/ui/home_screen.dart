@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import '../storage.dart';
 import '../sync_controller.dart';
 import 'clip_grid.dart';
+import 'my_code_screen.dart';
 import 'pair_screen.dart';
 import 'settings_screen.dart';
 import 'theme.dart';
@@ -58,6 +59,13 @@ class _HomeScreenState extends State<HomeScreen> {
     if (peer != null && mounted) showToast(context, 'Paired with ${peer.device.name}');
   }
 
+  Future<void> _openMyCode() async {
+    final peer = await Navigator.of(context).push<PairedPeer>(
+      MaterialPageRoute(builder: (_) => MyCodeScreen(controller: controller)),
+    );
+    if (peer != null && mounted) showToast(context, 'Paired with ${peer.device.name}');
+  }
+
   void _openSettings() => Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => SettingsScreen(controller: controller, onPair: _openPairing)),
       );
@@ -83,7 +91,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                 child: paired
                     ? _ConnectionCard(controller: controller, sending: _sending, onSend: _sendClipboard)
-                    : _WelcomeCard(onPair: _openPairing),
+                    : _WelcomeCard(onPair: _openPairing, onShowCode: _openMyCode),
               ),
             ),
             if (!paired) const SliverToBoxAdapter(child: _HowItWorks()),
@@ -157,6 +165,16 @@ class _ConnectionCard extends StatelessWidget {
   final bool sending;
   final VoidCallback onSend;
 
+  /// Laptop for computers, phone for phones, both when it's a mix.
+  IconData _cardIcon() {
+    final relevant = controller.state == LinkState.connected
+        ? controller.peers.where(controller.isConnected)
+        : controller.peers;
+    final computers = relevant.where(controller.isComputer).length;
+    if (computers == relevant.length) return Icons.laptop_mac_rounded;
+    return computers == 0 ? Icons.smartphone_rounded : Icons.devices_rounded;
+  }
+
   @override
   Widget build(BuildContext context) {
     final connected = controller.state == LinkState.connected;
@@ -193,7 +211,7 @@ class _ConnectionCard extends StatelessWidget {
                       ? Colors.white.withValues(alpha: context.isDark ? 0.1 : 0.2)
                       : Brand.warning.withValues(alpha: 0.14),
                 ),
-                child: Icon(Icons.laptop_mac_rounded, color: connected ? Colors.white : Brand.warning),
+                child: Icon(_cardIcon(), color: connected ? Colors.white : Brand.warning),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -206,7 +224,7 @@ class _ConnectionCard extends StatelessWidget {
                   Row(children: [
                     PulseDot(color: connected ? const Color(0xFF7CFFB2) : Brand.warning, size: 7),
                     Text(
-                      connected ? 'Connected · end-to-end encrypted' : 'Looking for your computer…',
+                      connected ? 'Connected · end-to-end encrypted' : 'Looking for your devices…',
                       style: text.bodySmall?.copyWith(
                         color: connected ? Colors.white.withValues(alpha: 0.85) : context.mutedText,
                       ),
@@ -218,7 +236,7 @@ class _ConnectionCard extends StatelessWidget {
             if (!connected) ...[
               const SizedBox(height: 12),
               Text(
-                'Keep both on the same Wi-Fi, with sharing turned on in ClipStack on your computer.',
+                'Keep both on the same Wi-Fi. On a Mac, sharing must be on in ClipStack → Settings → Devices.',
                 style: text.bodySmall?.copyWith(color: context.mutedText, height: 1.4),
               ),
             ],
@@ -267,9 +285,10 @@ class _ConnectionCard extends StatelessWidget {
 
 /// Not paired yet: what ClipStack does and the one button to start.
 class _WelcomeCard extends StatelessWidget {
-  const _WelcomeCard({required this.onPair});
+  const _WelcomeCard({required this.onPair, required this.onShowCode});
 
   final VoidCallback onPair;
+  final VoidCallback onShowCode;
 
   @override
   Widget build(BuildContext context) {
@@ -318,6 +337,15 @@ class _WelcomeCard extends StatelessWidget {
               icon: const Icon(Icons.qr_code_scanner_rounded),
               label: const Text('Pair with your computer'),
             ),
+            const SizedBox(height: 6),
+            Center(
+              child: TextButton.icon(
+                style: TextButton.styleFrom(foregroundColor: Colors.white),
+                onPressed: onShowCode,
+                icon: const Icon(Icons.qr_code_2_rounded, size: 18),
+                label: const Text('Pairing two phones? Show my code'),
+              ),
+            ),
           ]),
         ),
       ]),
@@ -356,7 +384,8 @@ class _HowItWorks extends StatelessWidget {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text('How it works', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 16),
-        step(1, 'Open ClipStack on your Mac', 'Settings → Devices → Pair a Device shows a QR code.'),
+        step(1, 'Open ClipStack on your Mac', 'Settings → Devices → Pair a Device shows a QR code. '
+            'Pairing two phones? One shows its code, the other scans it.'),
         step(2, 'Scan it with this phone', 'Tap Pair with your computer and point the camera at the code.'),
         step(3, 'Copy anywhere', 'Mac copies land on this phone automatically. To send from the phone, tap Send clipboard or use Share → ClipStack.'),
       ]),
@@ -428,7 +457,7 @@ class _EmptyClips extends StatelessWidget {
     final title = hasAny ? 'No ${filter.label.toLowerCase()} yet' : 'Nothing copied yet';
     final detail = hasAny
         ? 'Try another filter.'
-        : 'Copy something on your computer — it shows up here and on this phone\'s clipboard.';
+        : 'Copy something on a paired device — it shows up here and on this phone\'s clipboard.';
     return Padding(
       padding: const EdgeInsets.fromLTRB(32, 36, 32, 0),
       child: Column(children: [

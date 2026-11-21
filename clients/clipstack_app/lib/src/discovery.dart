@@ -13,6 +13,9 @@ class PeerDiscovery {
   final _found = StreamController<String>.broadcast();
   BonsoirDiscovery? _discovery;
 
+  /// This device's id: its own advertisement is not a peer.
+  String? ownId;
+
   /// Emits a device id whenever that device is found or moves.
   Stream<String> get found => _found.stream;
 
@@ -44,7 +47,7 @@ class PeerDiscovery {
   void _record(BonsoirService service) {
     final id = service.attributes['id'];
     final addresses = service.hostAddresses;
-    if (id == null || addresses.isEmpty) return;
+    if (id == null || id == ownId || addresses.isEmpty) return;
     // Prefer IPv4: link-local IPv6 needs a scope id that sockets often lack.
     final host = addresses.firstWhere((a) => !a.contains(':'), orElse: () => addresses.first);
     final address = (host: host, port: service.port);
