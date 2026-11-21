@@ -120,8 +120,35 @@ class SettingsScreen extends StatelessWidget {
             SettingsGroup(
               title: 'Sending',
               footer: 'Android only lets apps read the clipboard while they are open, so phone copies '
-                  'need one tap. Copies from your computer arrive on their own.',
+                  'need one tap: the bubble, the Quick Settings tile, the "Send clipboard" button on '
+                  'the ClipStack notification, or Share. Copies from your computer arrive on their own.',
               children: [
+                SwitchListTile(
+                  secondary: const IconTile(icon: Icons.bubble_chart_rounded, gradient: true),
+                  title: const Text('Floating bubble'),
+                  subtitle: const Text('Tap it to send or paste from any app. Drag it onto the ✕ to hide it.'),
+                  value: controller.bubbleEnabled,
+                  onChanged: (value) {
+                    tick();
+                    controller.setBubbleEnabled(value);
+                  },
+                ),
+                ListTile(
+                  leading: const IconTile(icon: Icons.content_paste_go_rounded),
+                  title: const Text('One-tap paste'),
+                  subtitle: Text(controller.pasteServiceEnabled
+                      ? 'On: the bubble\'s Paste pastes into the field you\'re typing in'
+                      : 'Lets the bubble\'s Paste type into any app. Turn on "ClipStack paste" in Accessibility.'),
+                  trailing: controller.pasteServiceEnabled
+                      ? const Icon(Icons.check_circle_rounded, color: Brand.success)
+                      : TextButton(onPressed: controller.openPasteServiceSettings, child: const Text('Turn on')),
+                  onTap: controller.openPasteServiceSettings,
+                ),
+                const ListTile(
+                  leading: IconTile(icon: Icons.dashboard_customize_outlined),
+                  title: Text('Quick Settings tile'),
+                  subtitle: Text('Edit your Quick Settings and add "Send clipboard"'),
+                ),
                 SwitchListTile(
                   secondary: const IconTile(icon: Icons.bolt_rounded),
                   title: const Text('Send when I open ClipStack'),

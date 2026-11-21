@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 
-/// Dart side of the "clipstack/native" channel (MainActivity.kt on Android).
+/// Dart side of the "clipstack/native" channel (NativeBridge.kt on Android).
 /// On other platforms every call is a harmless no-op until they get their
 /// own native side.
 class NativeBridge {
@@ -17,7 +17,8 @@ class NativeBridge {
   static const _channel = MethodChannel('clipstack/native');
   static final bool _supported = Platform.isAndroid;
 
-  /// A share or pairing link that arrived while the app was running.
+  /// A share, pairing link or clipboard read (bubble, tile, notification)
+  /// that arrived while the app was running.
   void Function(Map<String, Object?> intent)? onIntent;
 
   /// The share or pairing link the app was launched with, once.
@@ -38,6 +39,22 @@ class NativeBridge {
   Future<void> requestNotificationPermission() => _call('requestNotificationPermission');
   Future<void> setClipboardImage(Uint8List png) => _call('setClipboardImage', {'png': png});
   Future<void> moveToBack() => _call('moveToBack');
+  Future<void> showToast(String text) => _call('showToast', {'text': text});
+
+  // The floating bubble ("Display over other apps").
+  Future<bool> canDrawOverlays() async =>
+      _supported && (await _channel.invokeMethod<bool>('canDrawOverlays') ?? false);
+  Future<void> requestOverlayPermission() => _call('requestOverlayPermission');
+  Future<void> setBubble(bool enabled) => _call('setBubble', {'enabled': enabled});
+
+  /// The optional "ClipStack paste" Accessibility service (bubble → Paste).
+  Future<bool> isPasteServiceEnabled() async =>
+      _supported && (await _channel.invokeMethod<bool>('isPasteServiceEnabled') ?? false);
+  Future<void> openAccessibilitySettings() => _call('openAccessibilitySettings');
+
+  /// What the bubble's panel shows: connection status and recent clips.
+  Future<void> updateBubble(String status, List<Map<String, Object?>> items) =>
+      _call('updateBubble', {'status': status, 'items': items});
 
   /// Shared image (any format) → PNG that fits the protocol's size limit.
   Future<Uint8List> pngFromUri(String uri, {required int maxBytes}) async {

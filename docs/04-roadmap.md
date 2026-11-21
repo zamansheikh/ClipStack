@@ -62,8 +62,12 @@ Protocol and platform limits: [05-lan-sync.md](05-lan-sync.md).
       Network prompt, the Keychain-stored identity, QR scanning.
 - [x] Phone ↔ phone pairing: phones listen while paired with a phone or
       showing their code; either side dials; lower id wins duplicates.
-- [ ] Android: Quick Settings tile "Send clipboard"; move the connection into
-      the service so swiping the app away doesn't stop sync.
+- [x] Android: send without opening the app — floating bubble (Send / Paste /
+      Settings, drag to ✕ to hide), Quick Settings tile, notification button;
+      optional Accessibility service for one-tap paste.
+- [x] Android: sync runs in a process-wide Flutter engine, so closing or
+      swiping away the app no longer stops it.
+- [x] Mac: a Finder copy of one image file syncs as the picture.
 - [ ] iOS app (same Flutter app): foreground sync, share extension, later a
       keyboard extension.
 - [ ] Windows / Linux (Flutter desktop): listener + clipboard watcher; the

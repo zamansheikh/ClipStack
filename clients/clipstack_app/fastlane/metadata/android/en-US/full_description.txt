@@ -12,6 +12,8 @@ Copy something on your Mac and it's on your phone's clipboard a moment later, re
 • Phone → Mac in one tap: tap Send clipboard, use Share → ClipStack from any app, or just open ClipStack and it sends your latest copy.
 • Screenshots straight to your phone: copy an image on your Mac and paste it into any chat.
 • Phone to phone: pair two phones directly. One shows its pairing code, the other scans it.
+• Floating bubble: send your clipboard or paste from any app with one tap. Drag it to ✕ to hide it.
+• One-tap paste (optional): turn on "ClipStack paste" in Accessibility and the bubble pastes straight into the field you're typing in.
 • A beautiful history: every synced clip in a clean grid with filters for text, links and images. Tap to copy, hold for details.
 • Works in the background: a quiet notification keeps the connection open, so Mac copies arrive while you use other apps.
 • Light and dark themes, and a themed icon on Android 13+.

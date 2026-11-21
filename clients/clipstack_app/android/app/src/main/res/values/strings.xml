@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="paste_service_label">ClipStack paste</string>
+    <string name="paste_service_description">Lets the ClipStack bubble paste your clipboard into the text field you are typing in when you tap Paste. ClipStack does not read, store or send anything on your screen.</string>
+</resources>

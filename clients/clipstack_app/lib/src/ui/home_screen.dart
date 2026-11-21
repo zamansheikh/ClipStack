@@ -22,6 +22,8 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   StreamSubscription<String>? _messages;
+  StreamSubscription<String>? _navigation;
+  bool _settingsOpen = false;
   ClipFilter _filter = ClipFilter.all;
   bool _sending = false;
 
@@ -30,6 +32,9 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    _navigation = controller.navigation.listen((screen) {
+      if (screen == 'settings' && mounted && !_settingsOpen) _openSettings();
+    });
     _messages = controller.messages.listen((message) {
       if (mounted) showToast(context, message, icon: Icons.info_outline_rounded, iconColor: Brand.blue);
     });
@@ -38,6 +43,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _messages?.cancel();
+    _navigation?.cancel();
     super.dispose();
   }
 
@@ -66,9 +72,13 @@ class _HomeScreenState extends State<HomeScreen> {
     if (peer != null && mounted) showToast(context, 'Paired with ${peer.device.name}');
   }
 
-  void _openSettings() => Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => SettingsScreen(controller: controller, onPair: _openPairing)),
-      );
+  Future<void> _openSettings() async {
+    _settingsOpen = true;
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => SettingsScreen(controller: controller, onPair: _openPairing)),
+    );
+    _settingsOpen = false;
+  }
 
   @override
   Widget build(BuildContext context) {

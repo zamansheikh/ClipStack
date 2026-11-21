@@ -21,7 +21,7 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
       : native = native ?? NativeBridge(),
         storage = storage ?? AppStorage();
 
-  static const appVersion = '0.1.0';
+  static const appVersion = '0.2.0';
 
   final NativeBridge native;
   final AppStorage storage;
@@ -31,11 +31,23 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
   List<PairedPeer> peers = [];
   List<HistoryItem> history = [];
   bool autoSendOnOpen = true;
+
+  /// The floating bubble (send clipboard / copy a recent clip from any app).
+  bool bubbleEnabled = false;
+  bool _bubblePermissionPending = false;
+
+  /// Whether "ClipStack paste" is on in Accessibility (the bubble's Paste).
+  bool pasteServiceEnabled = false;
+  String _bubbleSignature = '';
   bool ready = false;
 
   final _sessions = <String, SyncSession>{};
   final _loops = <String, _PeerLoop>{};
   final _messages = StreamController<String>.broadcast();
+  final _navigation = StreamController<String>.broadcast();
+
+  /// Screens to open on request from outside the app (the bubble's Settings).
+  Stream<String> get navigation => _navigation.stream;
   /// What the phone's clipboard held when it was last synced (received from
   /// a computer, or read and sent). Auto-send skips it, so clips never echo
   /// back. Sending shared text doesn't touch the clipboard, so it doesn't
@@ -84,6 +96,9 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
     peers = await storage.loadPeers();
     history = await storage.loadHistory();
     autoSendOnOpen = await storage.autoSendOnOpen();
+    bubbleEnabled = await storage.bubbleEnabled() && await native.canDrawOverlays();
+    unawaited(native.setBubble(bubbleEnabled));
+    pasteServiceEnabled = await native.isPasteServiceEnabled();
     _clipboardSynced = await storage.lastSyncedText();
     native.onIntent = (intent) {
       _intentAt = DateTime.now();
@@ -118,6 +133,60 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
       loop.wake(); // reconnect right away instead of waiting out the backoff
     }
     unawaited(_autoSendIfChanged());
+    unawaited(_finishBubblePermission());
+    unawaited(_refreshPasteService());
+  }
+
+  /// Re-checked on every return to the app: the user flips it in system settings.
+  Future<void> _refreshPasteService() async {
+    final enabled = await native.isPasteServiceEnabled();
+    if (enabled == pasteServiceEnabled) return;
+    pasteServiceEnabled = enabled;
+    notifyListeners();
+  }
+
+  Future<void> openPasteServiceSettings() => native.openAccessibilitySettings();
+
+  // MARK: - Floating bubble
+
+  /// Turning it on first needs "Display over other apps"; Android shows that
+  /// as a settings page, and the bubble appears when the user comes back.
+  Future<void> setBubbleEnabled(bool value) async {
+    if (value && !await native.canDrawOverlays()) {
+      _bubblePermissionPending = true;
+      await native.requestOverlayPermission();
+      return;
+    }
+    bubbleEnabled = value;
+    await storage.setBubbleEnabled(value);
+    await native.setBubble(value);
+    notifyListeners();
+  }
+
+  Future<void> _finishBubblePermission() async {
+    if (!_bubblePermissionPending) return;
+    _bubblePermissionPending = false;
+    if (await native.canDrawOverlays()) {
+      await setBubbleEnabled(true);
+      _messages.add('Bubble on. Drag it anywhere; tap it to send or copy.');
+    } else {
+      _messages.add('The bubble needs "Display over other apps" to be allowed.');
+    }
+  }
+
+  /// Every state change also refreshes the bubble's panel (status + the five
+  /// newest clips), skipped when nothing it shows has changed.
+  @override
+  void notifyListeners() {
+    super.notifyListeners();
+    final recent = history.take(5).toList();
+    final signature = '$statusText|${recent.map((h) => h.id).join(',')}';
+    if (signature == _bubbleSignature) return;
+    _bubbleSignature = signature;
+    unawaited(native.updateBubble(statusText, [
+      for (final item in recent)
+        {'id': item.id, 'kind': item.kind, 'text': item.text, 'imagePath': item.imagePath},
+    ]));
   }
 
   // MARK: - Pairing
@@ -611,6 +680,34 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _sendFromClipboard(Map<String, Object?> event) async {
+    try {
+      final text = event['text'] as String?;
+      final List<String> names;
+      if (text != null) {
+        names = await sendText(text);
+        await _markClipboardSynced(text);
+      } else {
+        final png = await native.pngFromUri(event['uri'] as String, maxBytes: maxBodyLength);
+        names = await sendImage(png);
+      }
+      await native.showToast('Sent to ${names.map(_shortName).join(', ')}');
+    } on StateError catch (error) {
+      await native.showToast(error.message);
+    } on Object catch (error) {
+      await native.showToast("Couldn't send: $error");
+    }
+  }
+
+  /// "Zaman’s MacBook Air" → "MacBook Air", for short toasts.
+  static String _shortName(String name) {
+    for (final separator in const ['’s ', "'s "]) {
+      final i = name.indexOf(separator);
+      if (i > 0 && i + separator.length < name.length) return name.substring(i + separator.length);
+    }
+    return name;
+  }
+
   Future<void> setAutoSendOnOpen(bool value) async {
     autoSendOnOpen = value;
     await storage.setAutoSendOnOpen(value);
@@ -622,6 +719,23 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> _handleIntent(Map<String, Object?> intent) async {
     try {
       switch (intent['kind']) {
+        case 'clipboard':
+          // Read by the bubble, the Quick Settings tile or the notification.
+          // No screen is open, so the result shows as a toast.
+          await _sendFromClipboard(intent);
+          return;
+        case 'copied':
+          // Copied from the bubble's recent list: don't send it back on open.
+          await _markClipboardSynced(intent['text'] as String);
+          return;
+        case 'openSettings':
+          _navigation.add('settings');
+          return;
+        case 'bubbleHidden':
+          bubbleEnabled = false;
+          await storage.setBubbleEnabled(false);
+          notifyListeners();
+          return;
         case 'pair':
           final peer = await pair(intent['link'] as String);
           _messages.add('Paired with ${peer.device.name}');

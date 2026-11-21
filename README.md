@@ -46,7 +46,9 @@ No subscription, no account, no cloud.
 
 - 🔁 **Mac → phone, automatically** — anything you copy on your Mac lands on your phone's clipboard, ready to paste.
 - 📤 **Phone → Mac in one tap** — tap **Send clipboard**, use **Share → ClipStack** from any app, or just open ClipStack and it sends your latest copy.
-- 🖼️ **Images too** — copy a screenshot on your Mac and paste it into any chat on your phone; share a photo from your phone to your Mac's clipboard.
+- 🖼️ **Images too** — copy a screenshot or an image file (even from Finder) on your Mac and paste it into any chat on your phone; share a photo from your phone to your Mac's clipboard.
+- 🫧 **Floating bubble** — on Android, a small ClipStack bubble floats over any app. Tap it for **Send** (your clipboard to the Mac), **Paste** and **Settings**; drag it onto the ✕ to hide it, Messenger-style. A Quick Settings tile and a button on the ClipStack notification also send your clipboard without opening the app.
+- ⚡ **One-tap paste** — turn on the optional "ClipStack paste" Accessibility service and the bubble's Paste types your clipboard (your latest Mac copy) straight into the field you're in. Without it, Paste puts the newest clip on the clipboard for a long-press paste.
 - 🔐 **Private by design** — devices talk directly on your local network. Every connection is end-to-end encrypted (X25519 + ChaCha20-Poly1305), pairing uses a one-time QR code, and nothing is uploaded anywhere.
 - 📱↔📱 **Phone to phone** — pair two phones directly: one taps **Show my pairing code**, the other scans it. No computer needed.
 - 🏷️ **Know where it came from** — clips from your phone show a phone badge in your Mac's history.

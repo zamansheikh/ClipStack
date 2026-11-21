@@ -12,10 +12,12 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <!-- Scanning the pairing QR code. -->
     <uses-permission android:name="android.permission.CAMERA"/>
+    <!-- The floating bubble ("Display over other apps"), opt-in from Settings. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
 
     <application
         android:label="ClipStack"
-        android:name="${applicationName}"
+        android:name=".ClipStackApplication"
         android:icon="@mipmap/ic_launcher">
         <!-- singleTask: shares and pairing links reach the running instance
              (onNewIntent) instead of starting a second engine and connection. -->
@@ -52,6 +54,40 @@
                 <data android:scheme="clipstack" android:host="pair"/>
             </intent-filter>
         </activity>
+
+        <!-- Invisible: takes focus for a moment so Android allows a clipboard
+             read (bubble, Quick Settings tile, notification action). -->
+        <activity
+            android:name=".ClipReaderActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:launchMode="singleInstance"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"/>
+
+        <service
+            android:name=".SendClipboardTileService"
+            android:exported="true"
+            android:label="Send clipboard"
+            android:icon="@drawable/ic_stat_clipstack"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE"/>
+            </intent-filter>
+        </service>
+
+        <!-- Optional, user-enabled: one-tap Paste from the bubble. -->
+        <service
+            android:name=".PasteAccessibilityService"
+            android:exported="false"
+            android:label="@string/paste_service_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService"/>
+            </intent-filter>
+            <meta-data android:name="android.accessibilityservice" android:resource="@xml/paste_service"/>
+        </service>
 
         <service
             android:name=".KeepAliveService"

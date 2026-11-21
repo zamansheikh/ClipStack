@@ -145,6 +145,11 @@ class AppStorage {
 
   Future<bool> autoSendOnOpen() async => (await SharedPreferences.getInstance()).getBool('autoSendOnOpen') ?? true;
 
+  Future<bool> bubbleEnabled() async => (await SharedPreferences.getInstance()).getBool('bubbleEnabled') ?? false;
+
+  Future<void> setBubbleEnabled(bool value) async =>
+      (await SharedPreferences.getInstance()).setBool('bubbleEnabled', value);
+
   Future<void> setAutoSendOnOpen(bool value) async =>
       (await SharedPreferences.getInstance()).setBool('autoSendOnOpen', value);
 
