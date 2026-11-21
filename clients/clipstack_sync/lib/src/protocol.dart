@@ -239,11 +239,20 @@ class Message {
     return Message(header, Uint8List.sublistView(plaintext, 4 + headerLength));
   }
 
-  static Message hello(DeviceInfo device, String appVersion) =>
-      Message({'t': 'hello', 'device': device.toJson(), 'app': appVersion});
-  static Message pair(DeviceInfo device, Uint8List token) =>
-      Message({'t': 'pair', 'token': b64urlEncode(token), 'device': device.toJson()});
-  static Message paired(DeviceInfo device) => Message({'t': 'paired', 'device': device.toJson()});
+  // [port]: the sender's own listening port, when it accepts connections
+  // too (phones that pair with each other). Optional; older peers ignore it.
+  static Message hello(DeviceInfo device, String appVersion, {int? port}) =>
+      Message({'t': 'hello', 'device': device.toJson(), 'app': appVersion, 'port': ?port});
+  static Message pair(DeviceInfo device, Uint8List token, {int? port}) =>
+      Message({'t': 'pair', 'token': b64urlEncode(token), 'device': device.toJson(), 'port': ?port});
+  static Message paired(DeviceInfo device, {int? port}) =>
+      Message({'t': 'paired', 'device': device.toJson(), 'port': ?port});
+
+  /// The `port` field, when present and valid.
+  int? get listenPort {
+    final port = header['port'];
+    return port is int && port > 0 && port <= 65535 ? port : null;
+  }
   static Message ping() => Message({'t': 'ping'});
   static Message pong() => Message({'t': 'pong'});
   static Message unpair() => Message({'t': 'unpair'});

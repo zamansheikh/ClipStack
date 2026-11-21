@@ -36,6 +36,7 @@ class SyncSession {
     required this.peerStaticKey,
     required this.isInitiator,
     required this.pairedNow,
+    required this.peerListenPort,
   })  : _socket = socket,
         _frames = frames,
         _sendCipher = sendCipher,
@@ -53,6 +54,13 @@ class SyncSession {
 
   /// True when this session created the pairing.
   final bool pairedNow;
+
+  /// The port the peer listens on, if it said (phones that accept
+  /// connections); null for peers that only dial out or don't say.
+  final int? peerListenPort;
+
+  /// The peer's IP address as seen on this connection.
+  String get remoteAddress => _socket.remoteAddress.address;
 
   final _clips = StreamController<ClipMessage>.broadcast();
   final _done = Completer<void>();
@@ -90,6 +98,7 @@ class SyncSession {
     String? expectedPeerId,
     Uint8List? pairingToken,
     String appVersion = '0.1.0',
+    int? listenPort,
     Duration timeout = const Duration(seconds: 8),
   }) async {
     final socket = await Socket.connect(host, port, timeout: timeout);
@@ -97,7 +106,7 @@ class SyncSession {
     socket.done.catchError((_) => null); // errors surface through the read side
     final frames = StreamQueue(socket.transform(const FrameDecoder()));
     try {
-      return await _initiate(socket, frames, identity, peerStaticKey, expectedPeerId, pairingToken, appVersion)
+      return await _initiate(socket, frames, identity, peerStaticKey, expectedPeerId, pairingToken, appVersion, listenPort)
           .timeout(timeout, onTimeout: () => throw ProtocolException('handshake timed out'));
     } catch (_) {
       socket.destroy();
@@ -113,6 +122,7 @@ class SyncSession {
     String? expectedPeerId,
     Uint8List? pairingToken,
     String appVersion,
+    int? listenPort,
   ) async {
     final ephemeral = await newEphemeralKeyPair();
     final frame1 = buildFrame1(
@@ -134,8 +144,8 @@ class SyncSession {
     final receive = FrameCipher(keys.receive);
 
     final first = pairingToken == null
-        ? Message.hello(identity.device, appVersion)
-        : Message.pair(identity.device, pairingToken);
+        ? Message.hello(identity.device, appVersion, port: listenPort)
+        : Message.pair(identity.device, pairingToken, port: listenPort);
     socket.add(encodeFrame(await send.seal(first.encode())));
 
     final reply = Message.decode(await receive.open(await _nextFrame(frames)));
@@ -158,6 +168,7 @@ class SyncSession {
       peerStaticKey: peerStaticKey,
       isInitiator: true,
       pairedNow: pairingToken != null,
+      peerListenPort: reply.listenPort,
     ).._start();
   }
 
@@ -169,13 +180,14 @@ class SyncSession {
     required DeviceIdentity identity,
     required ResponderPolicy policy,
     String appVersion = '0.1.0',
+    int? listenPort,
     Duration timeout = const Duration(seconds: 8),
   }) async {
     socket.setOption(SocketOption.tcpNoDelay, true);
     socket.done.catchError((_) => null);
     final frames = StreamQueue(socket.transform(const FrameDecoder()));
     try {
-      return await _respond(socket, frames, identity, policy, appVersion)
+      return await _respond(socket, frames, identity, policy, appVersion, listenPort)
           .timeout(timeout, onTimeout: () => throw ProtocolException('handshake timed out'));
     } catch (_) {
       socket.destroy();
@@ -189,6 +201,7 @@ class SyncSession {
     DeviceIdentity identity,
     ResponderPolicy policy,
     String appVersion,
+    int? listenPort,
   ) async {
     final frame1 = await _nextFrame(frames);
     final hello = parseFrame1(frame1);
@@ -229,10 +242,10 @@ class SyncSession {
         await refuse('bad_token', 'pairing code expired or already used');
       }
       await policy.onPaired(device, hello.staticPublic);
-      socket.add(encodeFrame(await send.seal(Message.paired(identity.device).encode())));
+      socket.add(encodeFrame(await send.seal(Message.paired(identity.device, port: listenPort).encode())));
       pairedNow = true;
     } else if (first.type == 'hello' && isPaired) {
-      socket.add(encodeFrame(await send.seal(Message.hello(identity.device, appVersion).encode())));
+      socket.add(encodeFrame(await send.seal(Message.hello(identity.device, appVersion, port: listenPort).encode())));
       pairedNow = false;
     } else {
       await refuse('not_paired', 'this device is not paired');
@@ -247,6 +260,7 @@ class SyncSession {
       peerStaticKey: hello.staticPublic,
       isInitiator: false,
       pairedNow: pairedNow,
+      peerListenPort: first.listenPort,
     ).._start();
   }
 

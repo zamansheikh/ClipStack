@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:async/async.dart';
 import 'package:clipstack_sync/clipstack_sync.dart';
 import 'package:clipstack_sync/src/crypto.dart';
 import 'package:clipstack_sync/src/protocol.dart';
@@ -207,6 +208,37 @@ void main() {
       await first.close();
       final thief = await DeviceIdentity.restore(phone.device, _randomBytes(32));
       await expectLater(connect(as: thief), throwsA(isA<ProtocolException>()));
+    });
+
+    test('listening ports travel both ways; peers that omit them read as null', () async {
+      await server.close();
+      // A responder that announces its own listening port (a phone).
+      server = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+      server.listen((socket) {
+        SyncSession.accept(socket, identity: mac, policy: policy, listenPort: 47474)
+            .then(accepted.add, onError: accepted.addError);
+      });
+      policy.token = _randomBytes(16);
+      final phoneSide = await SyncSession.connect(
+        host: '127.0.0.1',
+        port: server.port,
+        identity: phone,
+        peerStaticKey: mac.publicKey,
+        pairingToken: policy.token,
+        listenPort: 51000,
+      );
+      final incoming = StreamQueue(accepted.stream);
+      final macSide = await incoming.next;
+      expect(phoneSide.peerListenPort, 47474);
+      expect(macSide.peerListenPort, 51000);
+      expect(macSide.remoteAddress, '127.0.0.1');
+      await phoneSide.close();
+
+      // Reconnect without announcing a port (like the Mac app does).
+      final quiet = await connect();
+      final quietMacSide = await incoming.next;
+      expect(quietMacSide.peerListenPort, isNull);
+      await quiet.close();
     });
 
     test('duplicate clip ids are delivered once', () async {
