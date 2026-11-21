@@ -1,0 +1,157 @@
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:clipstack_sync/clipstack_sync.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+/// A computer this phone is paired with.
+class PairedPeer {
+  PairedPeer({required this.device, required this.publicKey, required this.hosts, required this.port});
+
+  final DeviceInfo device;
+  final Uint8List publicKey;
+
+  /// Addresses it was last reached at, best first (fallback when mDNS is blocked).
+  final List<String> hosts;
+  final int port;
+
+  PairedPeer copyWith({List<String>? hosts, int? port, DeviceInfo? device}) => PairedPeer(
+        device: device ?? this.device,
+        publicKey: publicKey,
+        hosts: hosts ?? this.hosts,
+        port: port ?? this.port,
+      );
+
+  Map<String, Object?> toJson() =>
+      {'device': device.toJson(), 'publicKey': b64urlEncode(publicKey), 'hosts': hosts, 'port': port};
+
+  static PairedPeer fromJson(Map<String, Object?> json) => PairedPeer(
+        device: DeviceInfo.fromJson(json['device']),
+        publicKey: b64urlDecode(json['publicKey'] as String),
+        hosts: (json['hosts'] as List).cast<String>(),
+        port: json['port'] as int,
+      );
+}
+
+/// One clip in the phone's history: sent from here or received.
+class HistoryItem {
+  HistoryItem({
+    required this.id,
+    required this.kind,
+    required this.deviceName,
+    required this.incoming,
+    required this.at,
+    this.text,
+    this.imagePath,
+  });
+
+  final String id;
+  final String kind;
+  final String? text;
+  final String? imagePath;
+
+  /// The other device: where it came from, or where it was sent.
+  final String deviceName;
+  final bool incoming;
+  final DateTime at;
+
+  Map<String, Object?> toJson() => {
+        'id': id,
+        'kind': kind,
+        'text': text,
+        'imagePath': imagePath,
+        'deviceName': deviceName,
+        'incoming': incoming,
+        'at': at.millisecondsSinceEpoch,
+      };
+
+  static HistoryItem fromJson(Map<String, Object?> json) => HistoryItem(
+        id: json['id'] as String,
+        kind: json['kind'] as String,
+        text: json['text'] as String?,
+        imagePath: json['imagePath'] as String?,
+        deviceName: json['deviceName'] as String,
+        incoming: json['incoming'] as bool,
+        at: DateTime.fromMillisecondsSinceEpoch(json['at'] as int),
+      );
+}
+
+/// Persistence: the private key in the platform keystore, everything else
+/// in shared preferences, history images as files.
+class AppStorage {
+  static const _secure = FlutterSecureStorage();
+  static const historyLimit = 100;
+
+  Future<DeviceIdentity> loadIdentity({required String name, required String platform}) async {
+    final prefs = await SharedPreferences.getInstance();
+    final deviceJson = prefs.getString('device');
+    final privateKey = await _secure.read(key: 'privateKey');
+    if (deviceJson != null && privateKey != null) {
+      final identity = await DeviceIdentity.restore(
+        DeviceInfo.fromJson(jsonDecode(deviceJson)),
+        b64urlDecode(privateKey),
+      );
+      // Follow the phone's current name (the user may have renamed it).
+      return identity.device.name == name ? identity : identity.renamed(name);
+    }
+    final identity = await DeviceIdentity.generate(name: name, platform: platform);
+    await _secure.write(key: 'privateKey', value: b64urlEncode(identity.privateKeyBytes));
+    await prefs.setString('device', jsonEncode(identity.device.toJson()));
+    return identity;
+  }
+
+  Future<List<PairedPeer>> loadPeers() async {
+    final prefs = await SharedPreferences.getInstance();
+    final list = jsonDecode(prefs.getString('peers') ?? '[]') as List;
+    return list.map((e) => PairedPeer.fromJson(Map<String, Object?>.from(e as Map))).toList();
+  }
+
+  Future<void> savePeers(List<PairedPeer> peers) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('peers', jsonEncode(peers.map((p) => p.toJson()).toList()));
+  }
+
+  Future<List<HistoryItem>> loadHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    final list = jsonDecode(prefs.getString('history') ?? '[]') as List;
+    return list.map((e) => HistoryItem.fromJson(Map<String, Object?>.from(e as Map))).toList();
+  }
+
+  /// Persists the history list (the controller trims it to [historyLimit]).
+  Future<void> saveHistory(List<HistoryItem> items) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('history', jsonEncode(items.map((i) => i.toJson()).toList()));
+  }
+
+  Future<String> saveImage(String id, Uint8List png) async {
+    final dir = Directory('${(await getApplicationSupportDirectory()).path}/history');
+    await dir.create(recursive: true);
+    final file = File('${dir.path}/$id.png');
+    await file.writeAsBytes(png, flush: true);
+    return file.path;
+  }
+
+  Future<void> deleteImage(String path) => _deleteQuietly(path);
+
+  Future<bool> autoSendOnOpen() async => (await SharedPreferences.getInstance()).getBool('autoSendOnOpen') ?? true;
+
+  Future<void> setAutoSendOnOpen(bool value) async =>
+      (await SharedPreferences.getInstance()).setBool('autoSendOnOpen', value);
+
+  /// The last text sent or received, so opening the app doesn't echo it back.
+  Future<String?> lastSyncedText() async => (await SharedPreferences.getInstance()).getString('lastSyncedText');
+
+  Future<void> setLastSyncedText(String text) async =>
+      (await SharedPreferences.getInstance()).setString('lastSyncedText', text);
+
+  Future<void> _deleteQuietly(String path) async {
+    try {
+      await File(path).delete();
+    } on FileSystemException {
+      // already gone
+    }
+  }
+}

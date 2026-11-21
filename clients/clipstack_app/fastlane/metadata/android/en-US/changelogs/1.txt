@@ -1,0 +1,1 @@
+First release: Wi-Fi clipboard sync with ClipStack for Mac. Pair with a QR code, receive Mac copies in the background, send with one tap or the share sheet, and browse a history of text, links and images.
