@@ -1,0 +1,127 @@
+name: Windows
+
+# Builds ClipStack for Windows: the setup .exe (Inno Setup) and a portable zip.
+# Run it by hand; with a release tag it attaches both files to that release.
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Release to attach the installer to (e.g. v0.5.0). Empty = build only.
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      APP: clients/clipstack_app
+      RELEASE_DIR: clients/clipstack_app/build/windows/x64/runner/Release
+      OUT_DIR: clients/clipstack_app/build/installer
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag || github.ref }}
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.50.0
+          channel: stable
+          cache: true
+
+      - name: Test the sync protocol
+        working-directory: clients/clipstack_sync
+        run: |
+          dart pub get
+          dart test
+
+      - name: Read the version
+        id: version
+        working-directory: ${{ env.APP }}
+        run: |
+          $match = Select-String -Path pubspec.yaml -Pattern '^version:\s*([0-9]+\.[0-9]+\.[0-9]+)'
+          $version = $match.Matches[0].Groups[1].Value
+          "value=$version" >> $env:GITHUB_OUTPUT
+          Write-Host "ClipStack for Windows $version"
+
+      - name: Test and build
+        working-directory: ${{ env.APP }}
+        run: |
+          flutter pub get
+          flutter test
+          flutter build windows --release
+
+      - name: Bundle the Visual C++ runtime
+        run: |
+          foreach ($dll in 'msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll') {
+            Copy-Item "$env:WINDIR\System32\$dll" $env:RELEASE_DIR
+          }
+          Get-ChildItem $env:RELEASE_DIR | Format-Table Name, Length
+
+      - name: Smoke test
+        run: |
+          $exe = (Resolve-Path "$env:RELEASE_DIR\ClipStack.exe").Path
+          $app = Start-Process $exe -PassThru
+          Start-Sleep -Seconds 25
+          if ($app.HasExited) { throw "ClipStack exited with code $($app.ExitCode)" }
+
+          # The sync listener is up.
+          $listening = Get-NetTCPConnection -State Listen -OwningProcess $app.Id -ErrorAction SilentlyContinue
+          $listening | Format-Table LocalAddress, LocalPort
+          if (-not $listening) { throw 'ClipStack is not listening for devices' }
+
+          # A second launch hands over to the running copy and exits.
+          $second = Start-Process $exe -PassThru
+          if (-not $second.WaitForExit(10000)) { throw 'A second ClipStack kept running' }
+          if ($app.HasExited) { throw 'The first ClipStack exited' }
+
+          # A screenshot for a human to look at (best effort).
+          try {
+            Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+            $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            $bitmap = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
+            [System.Drawing.Graphics]::FromImage($bitmap).CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+            $bitmap.Save("$env:RUNNER_TEMP\screenshot.png")
+          } catch { Write-Warning "No screenshot: $_" }
+
+          Stop-Process -Id $app.Id -Force
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshot
+          path: ${{ runner.temp }}/screenshot.png
+          if-no-files-found: ignore
+
+      - name: Build the installer
+        run: |
+          choco upgrade innosetup -y --no-progress
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /Qp "/DMyAppVersion=${{ steps.version.outputs.value }}" "$env:APP\windows\installer\clipstack.iss"
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed ($LASTEXITCODE)" }
+
+      - name: Zip a portable copy
+        run: |
+          Compress-Archive -Path "$env:RELEASE_DIR\*" -DestinationPath "$env:OUT_DIR\ClipStack-Windows-${{ steps.version.outputs.value }}-portable.zip"
+          Get-FileHash "$env:OUT_DIR\*" -Algorithm SHA256 | ForEach-Object {
+            "$($_.Hash.ToLower())  $(Split-Path $_.Path -Leaf)"
+          } | Tee-Object "$env:OUT_DIR\..\SHA256SUMS-windows.txt"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ClipStack-Windows-${{ steps.version.outputs.value }}
+          path: |
+            ${{ env.OUT_DIR }}/*
+            ${{ env.APP }}/build/SHA256SUMS-windows.txt
+
+      - name: Attach to the release
+        if: inputs.release_tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $files = (Get-ChildItem -File $env:OUT_DIR).FullName
+          gh release upload "${{ inputs.release_tag }}" $files --clobber --repo "${{ github.repository }}"

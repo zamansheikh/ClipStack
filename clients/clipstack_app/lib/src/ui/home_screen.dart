@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import '../storage.dart';
 import '../sync_controller.dart';
 import 'clip_grid.dart';
+import 'desktop_pair_screen.dart';
 import 'my_code_screen.dart';
 import 'pair_screen.dart';
 import 'settings_screen.dart';
@@ -60,7 +61,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _openPairing() async {
     final peer = await Navigator.of(context).push<PairedPeer>(
-      MaterialPageRoute(builder: (_) => PairScreen(controller: controller), fullscreenDialog: true),
+      MaterialPageRoute(
+        builder: (_) => SyncController.isDesktop
+            ? DesktopPairScreen(controller: controller) // no camera on a PC
+            : PairScreen(controller: controller),
+        fullscreenDialog: true,
+      ),
     );
     if (peer != null && mounted) showToast(context, 'Paired with ${peer.device.name}');
   }
@@ -345,8 +351,9 @@ class _WelcomeCard extends StatelessWidget {
               ),
               onPressed: onPair,
               icon: const Icon(Icons.qr_code_scanner_rounded),
-              label: const Text('Pair with your computer'),
+              label: Text(SyncController.isDesktop ? 'Pair a phone or Mac' : 'Pair with your computer'),
             ),
+            if (!SyncController.isDesktop) ...[
             const SizedBox(height: 6),
             Center(
               child: TextButton.icon(
@@ -356,6 +363,7 @@ class _WelcomeCard extends StatelessWidget {
                 label: const Text('Pairing two phones? Show my code'),
               ),
             ),
+            ],
           ]),
         ),
       ]),
@@ -394,10 +402,16 @@ class _HowItWorks extends StatelessWidget {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text('How it works', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 16),
+        if (SyncController.isDesktop) ...[
+          step(1, 'Pair your phone', 'Open ClipStack on your phone, tap Pair with your computer and scan the code this PC shows.'),
+          step(2, 'Or pair your Mac', 'Copy the pairing link from the Mac\'s Pair a Device window and paste it here.'),
+          step(3, 'Copy anywhere', 'Copies on this PC go to your devices, and theirs land on this PC\'s clipboard — automatically, both ways.'),
+        ] else ...[
         step(1, 'Open ClipStack on your Mac', 'Settings → Devices → Pair a Device shows a QR code. '
             'Pairing two phones? One shows its code, the other scans it.'),
         step(2, 'Scan it with this phone', 'Tap Pair with your computer and point the camera at the code.'),
         step(3, 'Copy anywhere', 'Mac copies land on this phone automatically. To send from the phone, tap Send clipboard or use Share → ClipStack.'),
+        ],
       ]),
     );
   }

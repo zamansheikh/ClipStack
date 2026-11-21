@@ -6,7 +6,9 @@ import 'package:bonsoir/bonsoir.dart';
 import 'package:clipstack_sync/clipstack_sync.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+import 'package:pasteboard/pasteboard.dart';
 
+import 'desktop_clipboard.dart';
 import 'discovery.dart';
 import 'native.dart';
 import 'storage.dart';
@@ -21,7 +23,12 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
       : native = native ?? NativeBridge(),
         storage = storage ?? AppStorage();
 
-  static const appVersion = '0.2.0';
+  /// Windows / Linux: the clipboard can be read any time, so copies sync
+  /// automatically both ways (like the Mac app), and the PC always accepts
+  /// connections so phones can pair with it.
+  static final bool isDesktop = Platform.isWindows || Platform.isLinux;
+
+  static const appVersion = '0.3.0';
 
   final NativeBridge native;
   final AppStorage storage;
@@ -91,7 +98,13 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> init() async {
     WidgetsBinding.instance.addObserver(this);
-    final platform = Platform.isAndroid ? Platforms.android : (Platform.isIOS ? Platforms.ios : Platforms.linux);
+    final platform = Platform.isAndroid
+        ? Platforms.android
+        : Platform.isIOS
+            ? Platforms.ios
+            : Platform.isWindows
+                ? Platforms.windows
+                : Platforms.linux;
     _identity = await storage.loadIdentity(name: await native.deviceName(), platform: platform);
     peers = await storage.loadPeers();
     history = await storage.loadHistory();
@@ -113,6 +126,7 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
       _startLoop(peer.device.id);
     }
     if (peers.isNotEmpty) unawaited(native.startKeepAlive(statusText));
+    if (isDesktop) unawaited(_startDesktopClipboardWatch());
 
     ready = true;
     notifyListeners();
@@ -292,7 +306,7 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
     _codeExpires = DateTime.now().add(pairingCodeLifetime);
     await _updateListening();
     final port = listenPort;
-    if (port == null) throw StateError("This phone can't accept connections right now");
+    if (port == null) throw StateError("ClipStack can't accept connections right now");
     final hosts = await _localAddresses();
     if (hosts.isEmpty) throw StateError('Connect to Wi-Fi to show a pairing code');
     return PairingLink(
@@ -323,16 +337,19 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
     return true;
   }
 
-  /// This phone's IPv4 addresses, Wi-Fi first (cellular and VPN skipped:
-  /// another phone on the same Wi-Fi can't reach those).
+  /// This device's IPv4 addresses, Wi-Fi and Ethernet first. Skipped:
+  /// cellular, VPN tunnels and virtual adapters (Hyper-V, WSL, VirtualBox,
+  /// VMware), which another device on the same Wi-Fi can't reach.
   static Future<List<String>> _localAddresses() async {
+    const skip = ['rmnet', 'ccmni', 'tun', 'vethernet', 'virtualbox', 'vmware', 'bluetooth', 'loopback'];
+    const lan = ['wlan', 'en', 'wi-fi', 'wifi', 'ethernet', 'wireless'];
     final wifi = <String>[], other = <String>[];
     for (final interface in await NetworkInterface.list(type: InternetAddressType.IPv4)) {
       final name = interface.name.toLowerCase();
-      if (name.startsWith('rmnet') || name.startsWith('ccmni') || name.startsWith('tun')) continue;
+      if (skip.any((prefix) => name.startsWith(prefix) || name.contains(' $prefix'))) continue;
       for (final address in interface.addresses) {
         if (address.isLoopback || address.isLinkLocal) continue;
-        (name.startsWith('wlan') || name.startsWith('en') ? wifi : other).add(address.address);
+        (lan.any(name.startsWith) ? wifi : other).add(address.address);
       }
     }
     return [...wifi, ...other];
@@ -353,7 +370,7 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
   /// phone is showing its pairing code. Paired only with computers, the
   /// phone stays invisible on the network.
   Future<void> _updateListening() async {
-    final needed = _pairingOpen || peers.any((p) => !isComputer(p));
+    final needed = isDesktop || _pairingOpen || peers.any((p) => !isComputer(p));
     if (needed && _server == null) {
       await _startListening();
     } else if (!needed && _server != null) {
@@ -581,7 +598,7 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
     String? imagePath;
     switch (clip.kind) {
       case ClipKinds.image:
-        await native.setClipboardImage(clip.body);
+        await _writeClipboardImage(clip.body);
         imagePath = await storage.saveImage(clip.id, clip.body);
       default:
         final text = clip.text ?? '';
@@ -634,7 +651,18 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
   /// Send whatever text is on the phone's clipboard.
   Future<String> sendClipboard() async {
     final text = (await Clipboard.getData(Clipboard.kTextPlain))?.text;
-    if (text == null || text.isEmpty) return 'The clipboard has no text to send';
+    if (text == null || text.isEmpty) {
+      // A PC can read an image off the clipboard too.
+      final raw = isDesktop ? await DesktopClipboard.image() : null;
+      final image = raw == null ? null : await DesktopClipboard.toPng(raw, maxBytes: maxBodyLength);
+      if (image == null) return 'The clipboard has no text to send';
+      try {
+        final names = await sendImage(image);
+        return 'Image sent to ${names.join(', ')}';
+      } on StateError catch (error) {
+        return error.message;
+      }
+    }
     try {
       final names = await sendText(text);
       await _markClipboardSynced(text);
@@ -664,7 +692,7 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
   /// Android lets apps read the clipboard only while in front, so "send on
   /// open" is how a phone copy reaches the computer without extra taps.
   Future<void> _autoSendIfChanged() async {
-    if (!autoSendOnOpen || peers.isEmpty) return;
+    if (!Platform.isAndroid || !autoSendOnOpen || peers.isEmpty) return;
     // The window must have focus before Android allows the read.
     await Future<void>.delayed(const Duration(milliseconds: 500));
     // Opened by a share or pairing link: that is the action, not "send on open".
@@ -762,12 +790,83 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  // MARK: - Desktop clipboard (Windows / Linux)
+
+  Timer? _desktopWatch;
+  bool _desktopChecking = false;
+  int? _desktopSequence;
+  String? _desktopText;
+  String? _desktopImage; // fingerprint of the raw image on the clipboard
+  DateTime _nextImageCheck = DateTime(0);
+
+  /// Polls the clipboard like the Mac app does (Flutter exposes no change
+  /// event). What's on it at start-up is the baseline, not a new copy. On
+  /// Windows nothing is read until the clipboard's sequence number moves;
+  /// elsewhere text is read every 0.8 s and images every 3 s.
+  Future<void> _startDesktopClipboardWatch() async {
+    _desktopSequence = DesktopClipboard.sequenceNumber();
+    _desktopText = (await Clipboard.getData(Clipboard.kTextPlain))?.text;
+    _desktopImage = DesktopClipboard.fingerprint(await DesktopClipboard.image());
+    _desktopWatch = Timer.periodic(const Duration(milliseconds: 800), (_) => _checkDesktopClipboard());
+  }
+
+  Future<void> _checkDesktopClipboard() async {
+    if (_desktopChecking) return;
+    final sequence = DesktopClipboard.sequenceNumber();
+    if (sequence != null && sequence == _desktopSequence) return;
+    _desktopSequence = sequence;
+    _desktopChecking = true;
+    try {
+      final text = (await Clipboard.getData(Clipboard.kTextPlain))?.text;
+      if (text != null && text.isNotEmpty) {
+        if (text == _desktopText) return;
+        _desktopText = text;
+        _desktopImage = null;
+        // Our own write of a received clip is not a new copy.
+        if (text == _clipboardSynced || _sessions.isEmpty) return;
+        await _markClipboardSynced(text);
+        await sendText(text);
+        return;
+      }
+      if (sequence == null) {
+        if (DateTime.now().isBefore(_nextImageCheck)) return;
+        _nextImageCheck = DateTime.now().add(const Duration(seconds: 3));
+      }
+      final image = await DesktopClipboard.image();
+      final fingerprint = DesktopClipboard.fingerprint(image);
+      if (image == null || fingerprint == _desktopImage) return;
+      _desktopImage = fingerprint;
+      _desktopText = null;
+      if (_sessions.isEmpty) return;
+      final png = await DesktopClipboard.toPng(image, maxBytes: maxBodyLength);
+      if (png != null) await sendImage(png);
+    } on Object catch (error) {
+      debugPrint('ClipStack: clipboard check failed: $error');
+    } finally {
+      _desktopChecking = false;
+    }
+  }
+
+  /// Puts an image on the clipboard: Android through the native bridge
+  /// (FileProvider), PCs through pasteboard. On a PC the next watcher read
+  /// becomes the baseline, so a received image isn't sent back.
+  Future<void> _writeClipboardImage(Uint8List png) async {
+    if (isDesktop) {
+      await Pasteboard.writeImage(png);
+      _desktopImage = DesktopClipboard.fingerprint(await DesktopClipboard.image());
+      _desktopText = null;
+      _desktopSequence = DesktopClipboard.sequenceNumber();
+    } else {
+      await native.setClipboardImage(png);
+    }
+  }
+
   // MARK: - History
 
   /// Copy a history item back onto the phone's clipboard.
   Future<void> copyToClipboard(HistoryItem item) async {
     if (item.imagePath != null) {
-      await native.setClipboardImage(await File(item.imagePath!).readAsBytes());
+      await _writeClipboardImage(await File(item.imagePath!).readAsBytes());
     } else {
       await _markClipboardSynced(item.text ?? '');
       await Clipboard.setData(ClipboardData(text: item.text ?? ''));
@@ -823,6 +922,7 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
     }
     discovery.stop();
     _stopListening();
+    _desktopWatch?.cancel();
     _messages.close();
     _pairedByCode.close();
     super.dispose();

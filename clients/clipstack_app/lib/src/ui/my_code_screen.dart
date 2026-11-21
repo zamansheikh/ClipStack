@@ -85,21 +85,21 @@ class _MyCodeScreenState extends State<MyCodeScreen> {
     final text = Theme.of(context).textTheme;
     final expired = _link != null && _left == Duration.zero && _paired == null;
     return Scaffold(
-      appBar: AppBar(title: const Text('Pair another phone')),
+      appBar: AppBar(title: Text(SyncController.isDesktop ? 'Pair a phone' : 'Pair another phone')),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
           children: [
             Text(
-              _paired != null ? 'Paired!' : 'Scan this code with the other phone',
+              _paired != null ? 'Paired!' : 'Scan this code with ClipStack on your phone',
               textAlign: TextAlign.center,
               style: text.titleLarge,
             ),
             const SizedBox(height: 6),
             Text(
               _paired != null
-                  ? 'Clips now sync between this phone and ${_paired!.device.name}.'
-                  : 'On the other phone: ClipStack → Pair with your computer (or Settings → Scan a pairing code).',
+                  ? 'Clips now sync between this ${SyncController.isDesktop ? 'PC' : 'phone'} and ${_paired!.device.name}.'
+                  : 'On your phone: ClipStack → Pair with your computer (or Settings → Scan a pairing code).',
               textAlign: TextAlign.center,
               style: text.bodySmall?.copyWith(color: context.mutedText, height: 1.4),
             ),
@@ -107,7 +107,8 @@ class _MyCodeScreenState extends State<MyCodeScreen> {
             Center(child: _codeCard(context, expired)),
             const SizedBox(height: 20),
             Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-              Icon(Icons.smartphone_rounded, size: 16, color: context.mutedText),
+              Icon(SyncController.isDesktop ? Icons.desktop_windows_rounded : Icons.smartphone_rounded,
+                  size: 16, color: context.mutedText),
               const SizedBox(width: 6),
               Text(controller.phoneName, style: text.titleSmall),
             ]),
@@ -201,7 +202,8 @@ class _MyCodeScreenState extends State<MyCodeScreen> {
         const SizedBox(width: 14),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Waiting for the other phone…', style: text.titleSmall),
+            Text(SyncController.isDesktop ? 'Waiting for your phone…' : 'Waiting for the other phone…',
+                style: text.titleSmall),
             Text('Code expires in $minutes:$seconds · keep both on the same Wi-Fi',
                 style: text.bodySmall?.copyWith(color: context.mutedText)),
           ]),

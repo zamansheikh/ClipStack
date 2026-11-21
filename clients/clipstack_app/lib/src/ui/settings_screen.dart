@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:material_ui/material_ui.dart';
 
 import '../storage.dart';
@@ -37,7 +39,7 @@ class SettingsScreen extends StatelessWidget {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialog) => AlertDialog(
-        title: const Text('Clear history on this phone?'),
+        title: Text(SyncController.isDesktop ? 'Clear history on this PC?' : 'Clear history on this phone?'),
         content: const Text('Your computers keep their own history.'),
         actions: [
           TextButton(onPressed: () => Navigator.of(dialog).pop(false), child: const Text('Cancel')),
@@ -64,13 +66,15 @@ class SettingsScreen extends StatelessWidget {
           padding: const EdgeInsets.only(top: 8, bottom: 32),
           children: [
             SettingsGroup(
-              title: 'This phone',
-              footer: 'Other devices see this phone by this name.',
+              title: SyncController.isDesktop ? 'This computer' : 'This phone',
+              footer: 'Other devices see it by this name.',
               children: [
                 ListTile(
-                  leading: const IconTile(icon: Icons.smartphone_rounded, gradient: true),
+                  leading: IconTile(
+                      icon: SyncController.isDesktop ? Icons.desktop_windows_rounded : Icons.smartphone_rounded,
+                      gradient: true),
                   title: Text(controller.phoneName),
-                  subtitle: const Text('Android'),
+                  subtitle: Text(Platform.isWindows ? 'Windows' : (Platform.isLinux ? 'Linux' : 'Android')),
                 ),
               ],
             ),
@@ -98,15 +102,15 @@ class SettingsScreen extends StatelessWidget {
                   ),
                 ListTile(
                   leading: const IconTile(icon: Icons.qr_code_scanner_rounded),
-                  title: const Text('Scan a pairing code'),
-                  subtitle: const Text('From your Mac or another phone'),
+                  title: Text(SyncController.isDesktop ? 'Pair with a link' : 'Scan a pairing code'),
+                  subtitle: Text(SyncController.isDesktop ? 'From a Mac\'s pairing window' : 'From your Mac or another phone'),
                   trailing: Icon(Icons.chevron_right_rounded, color: context.mutedText),
                   onTap: onPair,
                 ),
                 ListTile(
                   leading: const IconTile(icon: Icons.qr_code_2_rounded),
                   title: const Text('Show my pairing code'),
-                  subtitle: const Text('Let another phone scan this one'),
+                  subtitle: Text(SyncController.isDesktop ? 'Let a phone scan this PC' : 'Let another phone scan this one'),
                   trailing: Icon(Icons.chevron_right_rounded, color: context.mutedText),
                   onTap: () async {
                     final peer = await Navigator.of(context).push<PairedPeer>(
@@ -117,6 +121,20 @@ class SettingsScreen extends StatelessWidget {
                 ),
               ],
             ),
+            if (SyncController.isDesktop)
+              const SettingsGroup(
+                title: 'Sending',
+                footer: 'Closing the window keeps ClipStack syncing from the notification area. '
+                    'Right-click its icon there to quit.',
+                children: [
+                  ListTile(
+                    leading: IconTile(icon: Icons.sync_rounded),
+                    title: Text('Automatic, both ways'),
+                    subtitle: Text('Text and images you copy on this PC go to your devices, and theirs land here.'),
+                  ),
+                ],
+              )
+            else
             SettingsGroup(
               title: 'Sending',
               footer: 'Android only lets apps read the clipboard while they are open, so phone copies '
@@ -171,7 +189,7 @@ class SettingsScreen extends StatelessWidget {
               children: [
                 ListTile(
                   leading: IconTile(icon: Icons.delete_sweep_outlined, color: Theme.of(context).colorScheme.error),
-                  title: const Text('Clear history on this phone'),
+                  title: Text(SyncController.isDesktop ? 'Clear history on this PC' : 'Clear history on this phone'),
                   subtitle: Text('${controller.history.length} clips'),
                   enabled: controller.history.isNotEmpty,
                   onTap: () => _clearHistory(context),
