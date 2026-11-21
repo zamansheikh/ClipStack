@@ -196,7 +196,7 @@ dart run bin/peer.dart listen --state peer.json        # prints clips as JSON li
 ```
 
 The Android emulator pairs from the same link:
-`adb shell "am start -a android.intent.action.VIEW -d '<link>' com.zamansheikh.clipstack"`.
+`adb shell "am start -a android.intent.action.VIEW -d '<link>' com.silifton.clipstack"`.
 `dart test` in `clients/clipstack_sync` checks the Dart side against a test
 vector produced by the Swift implementation.
 

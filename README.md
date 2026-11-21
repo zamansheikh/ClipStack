@@ -76,7 +76,7 @@ No subscription, no account, no cloud.
 
 ### Mac
 
-1. Download the latest `ClipStack-x.y.z.zip` from [**Releases**](https://github.com/zamansheikh/ClipStack/releases/latest), unzip, and move **ClipStack.app** to **Applications**.
+1. Download the latest `ClipStack-x.y.z.dmg` from [**Releases**](https://github.com/zamansheikh/ClipStack/releases/latest), open it, and drag **ClipStack** onto **Applications**.
 2. The app isn't notarized by Apple yet, so macOS blocks the first launch. Paste this one command in **Terminal** and press Enter:
 
    ```sh
@@ -84,15 +84,16 @@ No subscription, no account, no cloud.
    ```
 
 3. Open ClipStack (it lives in your menu bar) and press `⌘⇧V`.
-4. *Optional:* grant the **Accessibility** permission when asked so items paste directly into other apps — or skip it and use copy-only mode.
+4. *Optional:* grant the **Accessibility** permission when asked so items paste directly into other apps — or skip it and use copy-only mode. From 0.4.0 on, the permission survives updates.
 
 ### 📱 Android app
 
-ClipStack for Android is on its way to Google Play. Until then, build it from source (see below) and:
+1. On your phone, download **`ClipStack-Android-x.y.z.apk`** from [**Releases**](https://github.com/zamansheikh/ClipStack/releases/latest) and open it. Allow your browser or Files app to install apps when Android asks. (Google Play listing coming soon.)
+2. On your Mac, open **ClipStack → Settings → Devices**, turn on **Share clipboard over Wi-Fi**, and click **Pair a Device…**.
+3. In the Android app, tap **Pair with your computer** and scan the QR code.
+4. Copy something on your Mac — it's on your phone. To send from the phone, tap **Send clipboard** or use **Share → ClipStack**.
 
-1. On your Mac, open **ClipStack → Settings → Devices**, turn on **Share clipboard over Wi-Fi**, and click **Pair a Device…**.
-2. In the Android app, tap **Pair with your computer** and scan the QR code.
-3. Copy something on your Mac — it's on your phone. To send from the phone, tap **Send clipboard** or use **Share → ClipStack**.
+Pairing two phones? On one, open **Settings → Show my pairing code**; scan it from the other.
 
 > Android only lets apps read the clipboard while they're open, so sending *from* the phone takes one tap. Receiving from the Mac is automatic, even in the background.
 
@@ -124,6 +125,8 @@ Accessibility permission across rebuilds, sign with your own certificate via
 cd clients/clipstack_app
 flutter run --release
 ```
+
+Release builds are signed with the key named in `android/key.properties` (git-ignored); without it they fall back to the debug key.
 
 **Sync protocol tests:**
 

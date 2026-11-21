@@ -1,4 +1,4 @@
-package com.zamansheikh.clipstack_app
+package com.silifton.clipstack
 
 import android.Manifest
 import android.content.ClipData

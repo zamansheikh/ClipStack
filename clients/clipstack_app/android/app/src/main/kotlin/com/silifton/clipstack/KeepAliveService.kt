@@ -1,4 +1,4 @@
-package com.zamansheikh.clipstack_app
+package com.silifton.clipstack
 
 import android.app.NotificationChannel
 import android.app.NotificationManager

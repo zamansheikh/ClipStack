@@ -35,6 +35,21 @@ the code from the app.
 The protocol itself is in [`../clipstack_sync`](../clipstack_sync) and
 specified in [`docs/05-lan-sync.md`](../../docs/05-lan-sync.md).
 
+## Release signing
+
+`flutter build apk --release` signs with the keystore named in
+`android/key.properties` (git-ignored):
+
+```properties
+storePassword=…
+keyPassword=…
+keyAlias=clipstack
+storeFile=/absolute/path/to/clipstack-release.jks
+```
+
+Without that file, release builds use the debug key. Keep the keystore and
+its password backed up: every future update must be signed with the same key.
+
 ## Icons
 
 Launcher icons come from `assets/brand/` (split from the Mac app icon into
