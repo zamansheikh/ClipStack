@@ -1,0 +1,5 @@
+.dart_tool/
+pubspec.lock
+build/
+# State file written by `dart run bin/peer.dart`
+peer_state.json

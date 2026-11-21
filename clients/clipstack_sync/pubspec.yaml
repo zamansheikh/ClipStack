@@ -1,0 +1,16 @@
+name: clipstack_sync
+description: ClipStack Wi-Fi clipboard sync protocol v1 (see docs/05-lan-sync.md). Pure Dart, shared by every Flutter client.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.5.0
+
+executables:
+  peer: peer
+dependencies:
+  async: ^2.13.1
+  cryptography: ^2.9.0
+dev_dependencies:
+  lints: ^6.1.0
+  test: ^1.33.0
