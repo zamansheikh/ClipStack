@@ -1,0 +1,1 @@
+Floating bubble: send your clipboard or paste from any app, drag it to the X to hide it. Optional one-tap paste, a Quick Settings tile and a notification button to send. Sync keeps running after you close the app.
