@@ -1,7 +1,9 @@
 import AppKit
 import CryptoKit
 import Foundation
+import ImageIO
 import Network
+import UniformTypeIdentifiers
 
 /// Wi-Fi clipboard sync, Mac side (docs/05-lan-sync.md). The Mac listens and
 /// advertises `_clipstack._tcp`; phones connect to it. A local copy goes to
@@ -368,17 +370,29 @@ final class SyncService: ObservableObject {
 
     /// Send a local copy to every connected device. Only called for clipboard
     /// watcher captures — received clips are never forwarded (spec rule 1).
+    /// Last queued send; each broadcast waits for it, so clips leave in copy
+    /// order even when an earlier one (a big photo) takes longer to prepare.
+    private var broadcastTail: Task<Void, Never>?
+
     func broadcast(_ clip: Clip) {
-        guard isRunning, !activeSessions.isEmpty, let message = Self.message(for: clip, origin: identity.deviceId) else {
-            return
-        }
-        for (deviceId, session) in activeSessions where session.isReady {
-            session.send(message)
-            NSLog("ClipStack sync: sent \(message.string("kind") ?? "?") clip (\(message.body.count) B body) to \(deviceId)")
+        guard isRunning, !activeSessions.isEmpty else { return }
+        let origin = identity.deviceId
+        let previous = broadcastTail
+        broadcastTail = Task { [weak self] in
+            // Reading and converting images happens off the main thread.
+            let message = await Task.detached(priority: .userInitiated) {
+                Self.message(for: clip, origin: origin)
+            }.value
+            await previous?.value
+            guard let self, let message else { return }
+            for (deviceId, session) in self.activeSessions where session.isReady {
+                session.send(message)
+                NSLog("ClipStack sync: sent \(message.string("kind") ?? "?") clip (\(message.body.count) B body) to \(deviceId)")
+            }
         }
     }
 
-    private static func message(for clip: Clip, origin: String) -> SyncMessage? {
+    nonisolated private static func message(for clip: Clip, origin: String) -> SyncMessage? {
         var fields: [String: Any] = [
             "id": UUID().uuidString.lowercased(),
             "origin": origin,
@@ -416,15 +430,48 @@ final class SyncService: ObservableObject {
             fields["mime"] = "image/png"
             body = png
 
-        case .file, .color:
-            // A file path means nothing on another device (spec: v1 skips files).
+        case .file:
+            // A Finder copy puts the file's path on the clipboard, not its
+            // pixels, and a Mac path means nothing on a phone (spec: v1 skips
+            // files). A single picture is the exception: send the picture.
+            guard let png = imageFileAsPNG(clip.fileURLs) else { return nil }
+            fields["kind"] = "image"
+            fields["mime"] = "image/png"
+            body = png
+
+        case .color:
             return nil
         }
         return SyncMessage(type: "clip", fields: fields, body: body)
     }
 
+    /// A copied image file (JPEG, HEIC, PNG…) as PNG within the protocol's body
+    /// limit: full size when it fits, otherwise scaled down step by step.
+    /// Nil for anything but exactly one image file.
+    nonisolated private static func imageFileAsPNG(_ urls: [URL]) -> Data? {
+        guard urls.count == 1, let url = urls.first,
+              let type = UTType(filenameExtension: url.pathExtension), type.conforms(to: .image),
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil)
+        else { return nil }
+        for maxSide in [8192, 4096, 3072, 2048, 1536] {
+            let options: [CFString: Any] = [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true, // honour EXIF rotation
+                kCGImageSourceThumbnailMaxPixelSize: maxSide,
+            ]
+            guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+            let data = NSMutableData()
+            guard let destination = CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil)
+            else { return nil }
+            CGImageDestinationAddImage(destination, image, nil)
+            guard CGImageDestinationFinalize(destination) else { return nil }
+            if data.length <= SyncProtocol.maxBodyLength { return data as Data }
+        }
+        return nil
+    }
+
     /// The spec only carries PNG; images captured as TIFF are converted.
-    private static func pngData(from data: Data, path: String) -> Data? {
+    nonisolated private static func pngData(from data: Data, path: String) -> Data? {
         if path.hasSuffix(".png") { return data }
         guard let rep = NSBitmapImageRep(data: data) else { return nil }
         return rep.representation(using: .png, properties: [:])
