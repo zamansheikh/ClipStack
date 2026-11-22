@@ -25,7 +25,7 @@ package `clients/clipstack_sync/`.
 | macOS | yes (pasteboard watcher) | yes, sets the clipboard | listener + Bonjour advertiser |
 | Windows | yes — polls the clipboard sequence number | yes | Flutter desktop; always listens (phones dial it), dials the Mac; tray icon keeps it running; pairs with phones by showing a code, with a Mac by pasting the Mac's pairing link |
 | Linux | yes | yes | Flutter desktop, planned (same code paths as Windows) |
-| Android | **no** — Android 10+ blocks background clipboard reads | yes, while the app's foreground service runs | send = share sheet, in-app button, or auto-send when the app opens; pairs with other phones via "Show my pairing code" |
+| Android | **no** — Android 10+ blocks background clipboard reads | yes, while the app's foreground service runs | send = share sheet, in-app button, or auto-send when the app opens; pairs with other phones via the QR (show code) and Scan buttons |
 | iOS | no (no background clipboard access) | only while the app is open | share extension to send; Mac↔iPhone already sync via Universal Clipboard with the same Apple ID |
 
 ## Discovery

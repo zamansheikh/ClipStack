@@ -14,6 +14,8 @@
     <uses-permission android:name="android.permission.CAMERA"/>
     <!-- The floating bubble ("Display over other apps"), opt-in from Settings. -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
+    <!-- Saving a picture to the gallery; Android 10+ needs no permission for that. -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28"/>
 
     <application
         android:label="ClipStack"
@@ -39,11 +41,18 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
-            <!-- Share sheet: "Share → ClipStack" sends text or an image to the Mac. -->
+            <!-- Share sheet: "Share → ClipStack" sends text (typed, or a text
+                 file) or pictures to the paired devices. -->
             <intent-filter android:label="ClipStack">
                 <action android:name="android.intent.action.SEND"/>
                 <category android:name="android.intent.category.DEFAULT"/>
-                <data android:mimeType="text/plain"/>
+                <data android:mimeType="text/*"/>
+                <data android:mimeType="image/*"/>
+            </intent-filter>
+            <!-- Several photos picked in the gallery at once. -->
+            <intent-filter android:label="ClipStack">
+                <action android:name="android.intent.action.SEND_MULTIPLE"/>
+                <category android:name="android.intent.category.DEFAULT"/>
                 <data android:mimeType="image/*"/>
             </intent-filter>
             <!-- Pairing link: scanning the Mac's QR code with the phone camera opens it here. -->

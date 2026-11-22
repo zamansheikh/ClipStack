@@ -23,8 +23,6 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   StreamSubscription<String>? _messages;
-  StreamSubscription<String>? _navigation;
-  bool _settingsOpen = false;
   ClipFilter _filter = ClipFilter.all;
   bool _sending = false;
 
@@ -33,9 +31,6 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _navigation = controller.navigation.listen((screen) {
-      if (screen == 'settings' && mounted && !_settingsOpen) _openSettings();
-    });
     _messages = controller.messages.listen((message) {
       if (mounted) showToast(context, message, icon: Icons.info_outline_rounded, iconColor: Brand.blue);
     });
@@ -44,7 +39,6 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _messages?.cancel();
-    _navigation?.cancel();
     super.dispose();
   }
 
@@ -54,7 +48,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final result = await controller.sendClipboard();
     if (!mounted) return;
     setState(() => _sending = false);
-    final ok = result.startsWith('Sent');
+    final ok = result.startsWith('Sent') || result.startsWith('Image sent');
     showToast(context, result,
         icon: ok ? Icons.check_circle_rounded : Icons.error_outline_rounded, iconColor: ok ? Brand.success : Brand.warning);
   }
@@ -78,13 +72,9 @@ class _HomeScreenState extends State<HomeScreen> {
     if (peer != null && mounted) showToast(context, 'Paired with ${peer.device.name}');
   }
 
-  Future<void> _openSettings() async {
-    _settingsOpen = true;
-    await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => SettingsScreen(controller: controller, onPair: _openPairing)),
-    );
-    _settingsOpen = false;
-  }
+  Future<void> _openSettings() => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => SettingsScreen(controller: controller, onPair: _openPairing)),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -100,7 +90,14 @@ class _HomeScreenState extends State<HomeScreen> {
           body: CustomScrollView(slivers: [
             SliverSafeArea(
               bottom: false,
-              sliver: SliverToBoxAdapter(child: _Header(controller: controller, onSettings: _openSettings)),
+              sliver: SliverToBoxAdapter(
+                child: _Header(
+                  controller: controller,
+                  onShowCode: _openMyCode,
+                  onPair: _openPairing,
+                  onSettings: _openSettings,
+                ),
+              ),
             ),
             SliverToBoxAdapter(
               child: Padding(
@@ -142,9 +139,11 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 class _Header extends StatelessWidget {
-  const _Header({required this.controller, required this.onSettings});
+  const _Header({required this.controller, required this.onShowCode, required this.onPair, required this.onSettings});
 
   final SyncController controller;
+  final VoidCallback onShowCode;
+  final VoidCallback onPair;
   final VoidCallback onSettings;
 
   @override
@@ -163,6 +162,27 @@ class _Header extends StatelessWidget {
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(color: context.mutedText)),
           ]),
         ),
+        if (SyncController.isDesktop)
+          // No camera on a PC: its pairing screen shows its code or takes a Mac's link.
+          IconButton.filledTonal(
+            tooltip: 'Pair a phone or Mac',
+            onPressed: onPair,
+            icon: const Icon(Icons.qr_code_2_rounded),
+          )
+        else ...[
+          IconButton.filledTonal(
+            tooltip: 'Show my pairing code',
+            onPressed: onShowCode,
+            icon: const Icon(Icons.qr_code_2_rounded),
+          ),
+          const SizedBox(width: 4),
+          IconButton.filledTonal(
+            tooltip: 'Scan a pairing code',
+            onPressed: onPair,
+            icon: const Icon(Icons.qr_code_scanner_rounded),
+          ),
+        ],
+        const SizedBox(width: 4),
         IconButton.filledTonal(
           tooltip: 'Settings',
           onPressed: onSettings,
@@ -407,8 +427,8 @@ class _HowItWorks extends StatelessWidget {
           step(2, 'Or pair your Mac', 'Copy the pairing link from the Mac\'s Pair a Device window and paste it here.'),
           step(3, 'Copy anywhere', 'Copies on this PC go to your devices, and theirs land on this PC\'s clipboard — automatically, both ways.'),
         ] else ...[
-        step(1, 'Open ClipStack on your Mac', 'Settings → Devices → Pair a Device shows a QR code. '
-            'Pairing two phones? One shows its code, the other scans it.'),
+        step(1, 'Open ClipStack on your Mac', 'Click its menu bar icon → Pair a Phone… to show a QR code. '
+            'Pairing two phones? One taps QR to show its code, the other taps Scan.'),
         step(2, 'Scan it with this phone', 'Tap Pair with your computer and point the camera at the code.'),
         step(3, 'Copy anywhere', 'Mac copies land on this phone automatically. To send from the phone, tap Send clipboard or use Share → ClipStack.'),
         ],

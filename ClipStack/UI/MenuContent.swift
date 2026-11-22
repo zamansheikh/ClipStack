@@ -18,6 +18,12 @@ struct MenuContent: View {
 
         Divider()
 
+        Button("Pair a Phone…") {
+            PairingWindow.show()
+        }
+
+        Divider()
+
         Button("Settings…") {
             SettingsWindow.show(using: openSettings)
         }

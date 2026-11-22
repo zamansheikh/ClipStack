@@ -339,7 +339,7 @@ struct ClipPreviewPane: View {
                     .foregroundStyle(.orange)
             }
             LabeledContent("Copied") {
-                Text(clip.createdAt, format: .relative(presentation: .named))
+                Text(clip.lastUsedAt, format: .relative(presentation: .named))
             }
             LabeledContent("Size") {
                 Text(ByteCountFormatter.string(fromByteCount: Int64(clip.byteSize), countStyle: .file))

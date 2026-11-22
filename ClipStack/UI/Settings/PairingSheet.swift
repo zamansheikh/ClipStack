@@ -16,6 +16,9 @@ enum PairingState: Equatable {
 /// as a QR code, and closes the window on disappear.
 struct PairingSheet: View {
     @ObservedObject var sync: SyncService
+    /// Set when shown in a window of its own ([PairingWindow]) rather than as
+    /// a sheet, where `dismiss` has nothing to dismiss.
+    var onClose: (() -> Void)?
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -23,7 +26,7 @@ struct PairingSheet: View {
             state: state,
             onCopyLink: copyLink,
             onRenew: { sync.openPairingWindow() },
-            onClose: { dismiss() }
+            onClose: { if let onClose { onClose() } else { dismiss() } }
         )
         .onAppear { sync.openPairingWindow() }
         .onDisappear { sync.closePairingWindow() }
@@ -45,6 +48,49 @@ struct PairingSheet: View {
         pasteboard.setString(link, forType: .string)
         pasteboard.setString("1", forType: ClipboardWatcher.selfWriteType)
         pasteboard.setString("1", forType: NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"))
+    }
+}
+
+/// The pairing code in a window of its own, from the menu bar's "Pair a
+/// Phone…", so pairing doesn't go through Settings → Devices.
+@MainActor
+enum PairingWindow {
+    private static var window: NSWindow?
+    private static let closer = Closer()
+
+    static func show() {
+        let env = AppEnvironment.shared
+        // Pairing needs the Wi-Fi listener: asking to pair is asking for it.
+        if !env.settings.syncEnabled { env.settings.syncEnabled = true }
+        NSApp.activate()
+        if let window {
+            window.makeKeyAndOrderFront(nil)
+            window.orderFrontRegardless()
+            return
+        }
+        let host = NSHostingController(rootView: PairingSheet(sync: env.sync, onClose: { PairingWindow.window?.close() }))
+        let window = NSWindow(contentViewController: host)
+        window.title = "Pair a Device"
+        window.styleMask = [.titled, .closable]
+        window.isReleasedWhenClosed = false
+        window.delegate = closer
+        window.center()
+        self.window = window
+        window.makeKeyAndOrderFront(nil)
+        // Raises the window even if macOS declined to activate the app
+        // (ClipStack is a menu bar app, never active on its own).
+        window.orderFrontRegardless()
+    }
+
+    /// Closing the window ends the pairing window too: the code stops working.
+    private final class Closer: NSObject, NSWindowDelegate {
+        func windowWillClose(_ notification: Notification) {
+            MainActor.assumeIsolated {
+                PairingWindow.window?.contentViewController = nil
+                PairingWindow.window = nil
+                AppEnvironment.shared.sync.closePairingWindow()
+            }
+        }
     }
 }
 
@@ -101,7 +147,7 @@ struct PairingContent: View {
 
                 VStack(alignment: .leading, spacing: 14) {
                     StepRow(number: 1, text: "Install ClipStack on your phone")
-                    StepRow(number: 2, text: "Open it and tap **Scan pairing code**")
+                    StepRow(number: 2, text: "Open it and tap **Pair with your computer**, or the scan button at the top")
                     StepRow(number: 3, text: "Point the camera at this code")
                     statusLine
                         .padding(.top, 6)

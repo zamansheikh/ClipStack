@@ -23,9 +23,14 @@ class PairScreen extends StatefulWidget {
 }
 
 class _PairScreenState extends State<PairScreen> with SingleTickerProviderStateMixin {
+  // Every frame is reported, and a code anywhere in view counts (the frame
+  // is a guide). With "no duplicates" plus a scan window, the plugin marked
+  // a code as seen before checking it was inside the window, so a code first
+  // caught half outside was ignored until the screen was reopened. _pair
+  // ignores repeats itself.
   final _scanner = MobileScannerController(
     formats: const [BarcodeFormat.qrCode],
-    detectionSpeed: DetectionSpeed.noDuplicates,
+    detectionSpeed: DetectionSpeed.normal,
   );
   late final AnimationController _sweep =
       AnimationController(vsync: this, duration: const Duration(milliseconds: 2200))..repeat(reverse: true);
@@ -103,7 +108,6 @@ class _PairScreenState extends State<PairScreen> with SingleTickerProviderStateM
           return Stack(fit: StackFit.expand, children: [
             MobileScanner(
               controller: _scanner,
-              scanWindow: window,
               onDetect: (capture) {
                 for (final code in capture.barcodes) {
                   final value = code.rawValue;

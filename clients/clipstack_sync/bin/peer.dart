@@ -100,14 +100,19 @@ Future<void> _withSession(
         expectedPeerId: peerDevice.id,
       ));
   _emit({'event': 'connected', 'peer': session.peer.toJson()});
-  final clips = session.clips.listen((clip) => _emit({
-        'event': 'clip',
-        'kind': clip.kind,
-        if (clip.text != null) 'text': clip.text,
-        if (clip.body.isNotEmpty) 'bytes': clip.body.length,
-        if (clip.mime != null) 'mime': clip.mime,
-        'origin': clip.origin,
-      }));
+  final clips = session.clips.listen((clip) {
+    final size = _pngSize(clip.body);
+    _emit({
+      'event': 'clip',
+      'kind': clip.kind,
+      if (clip.text != null) 'text': clip.text,
+      if (clip.body.isNotEmpty) 'bytes': clip.body.length,
+      if (size != null) 'width': size.width,
+      if (size != null) 'height': size.height,
+      if (clip.mime != null) 'mime': clip.mime,
+      'origin': clip.origin,
+    });
+  });
   await body(session, state.identity);
   if (!keepOpen) await session.close();
   await session.done;
@@ -132,6 +137,18 @@ Future<SyncSession> _connectAny(List<String> hosts, int port, Future<SyncSession
 }
 
 void _emit(Map<String, Object?> event) => stdout.writeln(jsonEncode(event));
+
+/// A PNG's size from its IHDR chunk (right after the signature); null for
+/// anything else. Lets a test check, say, that a photo arrived upright.
+({int width, int height})? _pngSize(Uint8List bytes) {
+  const signature = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+  if (bytes.length < 24) return null;
+  for (var i = 0; i < signature.length; i++) {
+    if (bytes[i] != signature[i]) return null;
+  }
+  final header = ByteData.sublistView(bytes, 16, 24);
+  return (width: header.getUint32(0), height: header.getUint32(4));
+}
 
 class _Args {
   _Args(List<String> argv) {

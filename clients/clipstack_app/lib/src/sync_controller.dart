@@ -28,7 +28,7 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
   /// connections so phones can pair with it.
   static final bool isDesktop = Platform.isWindows || Platform.isLinux;
 
-  static const appVersion = '0.3.0';
+  static const appVersion = '0.4.0';
 
   final NativeBridge native;
   final AppStorage storage;
@@ -51,10 +51,6 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
   final _sessions = <String, SyncSession>{};
   final _loops = <String, _PeerLoop>{};
   final _messages = StreamController<String>.broadcast();
-  final _navigation = StreamController<String>.broadcast();
-
-  /// Screens to open on request from outside the app (the bubble's Settings).
-  Stream<String> get navigation => _navigation.stream;
   /// What the phone's clipboard held when it was last synced (received from
   /// a computer, or read and sent). Auto-send skips it, so clips never echo
   /// back. Sending shared text doesn't touch the clipboard, so it doesn't
@@ -107,7 +103,7 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
                 : Platforms.linux;
     _identity = await storage.loadIdentity(name: await native.deviceName(), platform: platform);
     peers = await storage.loadPeers();
-    history = await storage.loadHistory();
+    history = await _loadHistoryWithoutRepeats();
     autoSendOnOpen = await storage.autoSendOnOpen();
     bubbleEnabled = await storage.bubbleEnabled() && await native.canDrawOverlays();
     unawaited(native.setBubble(bubbleEnabled));
@@ -610,6 +606,7 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
       kind: clip.kind,
       text: clip.text,
       imagePath: imagePath,
+      fingerprint: imagePath == null ? null : DesktopClipboard.fingerprint(clip.body),
       deviceName: peer.device.name,
       devicePlatform: peer.device.platform,
       incoming: true,
@@ -641,6 +638,7 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
       id: clip.id,
       kind: clip.kind,
       imagePath: await storage.saveImage(clip.id, png),
+      fingerprint: DesktopClipboard.fingerprint(png),
       deviceName: names.join(', '),
       incoming: false,
       at: DateTime.now(),
@@ -648,14 +646,28 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
     return names;
   }
 
-  /// Send whatever text is on the phone's clipboard.
+  /// Send whatever is on the clipboard: an image, or text.
   Future<String> sendClipboard() async {
+    // Flutter reads only text; on Android the native side sees images too.
+    final clipboard = Platform.isAndroid ? await native.readClipboard() : null;
+    final imageUri = clipboard?['uri'] as String?;
+    if (imageUri != null) {
+      try {
+        final png = await native.pngFromUri(imageUri, maxBytes: maxBodyLength);
+        final names = await sendImage(png);
+        return 'Image sent to ${names.join(', ')}';
+      } on StateError catch (error) {
+        return error.message;
+      } on PlatformException {
+        return "Couldn't read the copied image";
+      }
+    }
     final text = (await Clipboard.getData(Clipboard.kTextPlain))?.text;
     if (text == null || text.isEmpty) {
       // A PC can read an image off the clipboard too.
       final raw = isDesktop ? await DesktopClipboard.image() : null;
       final image = raw == null ? null : await DesktopClipboard.toPng(raw, maxBytes: maxBodyLength);
-      if (image == null) return 'The clipboard has no text to send';
+      if (image == null) return 'The clipboard is empty';
       try {
         final names = await sendImage(image);
         return 'Image sent to ${names.join(', ')}';
@@ -756,9 +768,6 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
           // Copied from the bubble's recent list: don't send it back on open.
           await _markClipboardSynced(intent['text'] as String);
           return;
-        case 'openSettings':
-          _navigation.add('settings');
-          return;
         case 'bubbleHidden':
           bubbleEnabled = false;
           await storage.setBubbleEnabled(false);
@@ -771,10 +780,15 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
         case 'text':
           final names = await sendText(intent['text'] as String);
           _messages.add('Sent to ${names.join(', ')}');
+        case 'textFile':
+          final names = await sendText(await native.textFromUri(intent['uri'] as String));
+          _messages.add('Sent to ${names.join(', ')}');
         case 'image':
           final png = await native.pngFromUri(intent['uri'] as String, maxBytes: maxBodyLength);
           final names = await sendImage(png);
           _messages.add('Image sent to ${names.join(', ')}');
+        case 'images':
+          _messages.add(await _sendSharedImages((intent['uris'] as List).cast<String>()));
         default:
           return;
       }
@@ -785,9 +799,33 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
       _messages.add(error.message);
     } on StateError catch (error) {
       _messages.add(error.message);
+    } on PlatformException catch (error) {
+      _messages.add(error.code == 'image' ? "Couldn't read the picture" : error.message ?? "Couldn't send it");
     } on Object catch (error) {
       _messages.add('$error');
     }
+  }
+
+  /// Several photos shared from the gallery, sent one by one in order (the
+  /// last one ends up on the other devices' clipboard). A photo that can't be
+  /// read is skipped; losing the connection stops the rest.
+  Future<String> _sendSharedImages(List<String> uris) async {
+    var sent = 0;
+    var names = <String>[];
+    for (final uri in uris) {
+      final Uint8List png;
+      try {
+        png = await native.pngFromUri(uri, maxBytes: maxBodyLength);
+      } on PlatformException {
+        continue;
+      }
+      names = await sendImage(png);
+      sent++;
+    }
+    final to = names.join(', ');
+    if (sent == 0) return "Couldn't read the pictures";
+    if (sent == uris.length) return sent == 1 ? 'Image sent to $to' : '$sent images sent to $to';
+    return '$sent of ${uris.length} images sent to $to';
   }
 
   // MARK: - Desktop clipboard (Windows / Linux)
@@ -873,6 +911,16 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  /// Put a history picture in the phone's gallery; says what to tell the user.
+  Future<({bool saved, String message})> saveToGallery(HistoryItem item) async {
+    try {
+      await native.saveToGallery(item.imagePath!);
+      return (saved: true, message: 'Saved to Gallery');
+    } on PlatformException catch (error) {
+      return (saved: false, message: error.message ?? "Couldn't save the picture");
+    }
+  }
+
   /// Forget every clip on this phone (computers keep their own history).
   Future<void> clearHistory() async {
     for (final item in history) {
@@ -893,17 +941,39 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   /// Updates the list synchronously before any await, so clips added close
-  /// together can't overwrite each other's update.
+  /// together can't overwrite each other's update. A repeat of a clip
+  /// already in the list moves it to the top instead of adding a copy.
   Future<void> _addHistory(HistoryItem item) async {
-    final all = [item, ...history.where((h) => h.id != item.id)];
-    history = all.take(AppStorage.historyLimit).toList();
-    final dropped = all.skip(AppStorage.historyLimit).toList();
+    final (:kept, :dropped) = HistoryItem.add(history, item);
+    history = kept;
     notifyListeners();
     await storage.saveHistory(history);
     for (final old in dropped) {
-      if (old.imagePath != null) await storage.deleteImage(old.imagePath!);
+      if (old.imagePath != null && old.imagePath != item.imagePath) await storage.deleteImage(old.imagePath!);
     }
     notifyListeners();
+  }
+
+  /// History saved before repeats were merged may hold the same clip many
+  /// times; keep only the newest of each.
+  Future<List<HistoryItem>> _loadHistoryWithoutRepeats() async {
+    final saved = await storage.loadHistory();
+    var kept = <HistoryItem>[];
+    final dropped = <HistoryItem>[];
+    for (final item in saved.reversed) {
+      final result = HistoryItem.add(kept, item);
+      kept = result.kept;
+      dropped.addAll(result.dropped);
+    }
+    if (dropped.isNotEmpty) {
+      await storage.saveHistory(kept);
+      for (final old in dropped) {
+        if (old.imagePath != null && !kept.any((h) => h.imagePath == old.imagePath)) {
+          await storage.deleteImage(old.imagePath!);
+        }
+      }
+    }
+    return kept;
   }
 
   Future<void> _markClipboardSynced(String text) async {

@@ -47,11 +47,13 @@ No subscription, no account, no cloud.
 
 - 🔁 **Mac → phone, automatically** — anything you copy on your Mac lands on your phone's clipboard, ready to paste.
 - 📤 **Phone → Mac in one tap** — tap **Send clipboard**, use **Share → ClipStack** from any app, or just open ClipStack and it sends your latest copy.
-- 🖼️ **Images too** — copy a screenshot or an image file (even from Finder) on your Mac and paste it into any chat on your phone; share a photo from your phone to your Mac's clipboard.
-- 🫧 **Floating bubble** — on Android, a small ClipStack bubble floats over any app. Tap it for **Send** (your clipboard to the Mac), **Paste** and **Settings**; drag it onto the ✕ to hide it, Messenger-style. A Quick Settings tile and a button on the ClipStack notification also send your clipboard without opening the app.
+- 🖼️ **Images too** — copy a screenshot or an image file (even from Finder) on your Mac and paste it into any chat on your phone. On the phone, copy an image and tap **Send clipboard**, or share photos from your gallery — one or several at once — with **Share → ClipStack**.
+- 💾 **Save to gallery** — long-press a picture in the phone's history and tap **Save** to keep it in your gallery (Pictures/ClipStack).
+- 🧹 **No duplicates** — copy or send the same thing again and it moves back to the top with a fresh time, on every device, instead of piling up.
+- 🫧 **Floating bubble** — on Android, a small ClipStack bubble floats over any app. Tap it for **Send** (your clipboard to the Mac), **Paste** and **Open ClipStack**; drag it onto the ✕ to hide it, Messenger-style. A Quick Settings tile and a button on the ClipStack notification also send your clipboard without opening the app.
 - ⚡ **One-tap paste** — turn on the optional "ClipStack paste" Accessibility service and the bubble's Paste types your clipboard (your latest Mac copy) straight into the field you're in. Without it, Paste puts the newest clip on the clipboard for a long-press paste.
 - 🔐 **Private by design** — devices talk directly on your local network. Every connection is end-to-end encrypted (X25519 + ChaCha20-Poly1305), pairing uses a one-time QR code, and nothing is uploaded anywhere.
-- 📱↔📱 **Phone to phone** — pair two phones directly: one taps **Show my pairing code**, the other scans it. No computer needed.
+- 📱↔📱 **Phone to phone** — pair two phones directly: one taps the **QR** button at the top of the app to show its code, the other taps **Scan**. No computer needed.
 - 🪟 **Windows PCs too** — the Windows app syncs automatically both ways, text and images, and keeps running in the notification area when you close its window. Your phone pairs by scanning the code on the PC's screen.
 - 🏷️ **Know where it came from** — clips from your phone show a phone badge in your Mac's history.
 
@@ -93,11 +95,11 @@ No subscription, no account, no cloud.
 ### 📱 Android app
 
 1. On your phone, download **`ClipStack-Android-x.y.z.apk`** from [**Releases**](https://github.com/zamansheikh/ClipStack/releases/latest) and open it. Allow your browser or Files app to install apps when Android asks. (Google Play listing coming soon.)
-2. On your Mac, open **ClipStack → Settings → Devices**, turn on **Share clipboard over Wi-Fi**, and click **Pair a Device…**.
+2. On your Mac, click the ClipStack menu bar icon → **Pair a Phone…**. It switches on **Share clipboard over Wi-Fi** if needed and shows a QR code. (The same code is in **Settings → Devices → Pair a Device…**.)
 3. In the Android app, tap **Pair with your computer** and scan the QR code.
-4. Copy something on your Mac — it's on your phone. To send from the phone, tap **Send clipboard** or use **Share → ClipStack**.
+4. Copy something on your Mac — it's on your phone. To send from the phone, tap **Send clipboard** (text or a copied image) or use **Share → ClipStack** from any app — photos from your gallery (several at once), links, text and text files.
 
-Pairing two phones? On one, open **Settings → Show my pairing code**; scan it from the other.
+Pairing two phones? On one, tap the **QR** button at the top of the app to show its pairing code; on the other, tap **Scan** next to it.
 
 > Android only lets apps read the clipboard while they're open, so sending *from* the phone takes one tap. Receiving from the Mac is automatic, even in the background.
 

@@ -1,7 +1,6 @@
 package com.silifton.clipstack
 
 import android.app.Activity
-import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
@@ -30,7 +29,7 @@ class ClipReaderActivity : Activity() {
         super.onWindowFocusChanged(hasFocus)
         if (!hasFocus || done) return
         done = true
-        val event = readClipboard()
+        val event = ClipboardReader.read(this)?.plus("kind" to "clipboard")
         Log.i("ClipStack", "clipboard read: ${event?.get("uri")?.let { "image" } ?: event?.get("text")?.let { "text, ${(it as String).length} chars" } ?: "empty"}") // never the content
         if (event == null) {
             Toast.makeText(this, "The clipboard is empty", Toast.LENGTH_SHORT).show()
@@ -44,18 +43,6 @@ class ClipReaderActivity : Activity() {
         super.finish()
         @Suppress("DEPRECATION")
         overridePendingTransition(0, 0)
-    }
-
-    private fun readClipboard(): Map<String, Any?>? {
-        val clip = getSystemService(ClipboardManager::class.java).primaryClip ?: return null
-        if (clip.itemCount == 0) return null
-        val item = clip.getItemAt(0)
-        val uri = item.uri
-        if (uri != null && clip.description.hasMimeType("image/*")) {
-            return mapOf("kind" to "clipboard", "uri" to uri.toString())
-        }
-        val text = item.coerceToText(this)?.toString()
-        return if (text.isNullOrBlank()) null else mapOf("kind" to "clipboard", "text" to text)
     }
 
     companion object {

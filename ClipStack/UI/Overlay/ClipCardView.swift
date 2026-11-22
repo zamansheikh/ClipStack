@@ -48,7 +48,9 @@ struct ClipCardView: View {
                 Text(clip.sourceName ?? kindLabel)
                     .font(.caption.weight(.semibold))
                     .lineLimit(1)
-                Text(clip.createdAt, format: .relative(presentation: .named))
+                // The list is ordered by last use (a repeat copy moves up), so
+                // show that time, not the first copy's.
+                Text(clip.lastUsedAt, format: .relative(presentation: .named))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }

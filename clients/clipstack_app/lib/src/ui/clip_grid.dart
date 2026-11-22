@@ -223,7 +223,8 @@ String shortDeviceName(String name) {
   return name;
 }
 
-/// Long-press sheet: the full clip, where it came from, Copy and Delete.
+/// Long-press sheet: the full clip, where it came from, Copy and Delete,
+/// and Save to the gallery for pictures (Android).
 Future<void> showClipDetails(BuildContext context, HistoryItem item, SyncController controller) {
   tick();
   return showModalBottomSheet<void>(
@@ -231,6 +232,7 @@ Future<void> showClipDetails(BuildContext context, HistoryItem item, SyncControl
     isScrollControlled: true,
     builder: (sheet) {
       final text = Theme.of(sheet).textTheme;
+      final canSave = item.isImage && Platform.isAndroid;
       return SafeArea(
         child: ConstrainedBox(
           constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(sheet).height * 0.8),
@@ -272,6 +274,7 @@ Future<void> showClipDetails(BuildContext context, HistoryItem item, SyncControl
                   child: OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
                       minimumSize: const Size(0, 52),
+                      padding: canSave ? const EdgeInsets.symmetric(horizontal: 8) : null,
                       foregroundColor: Theme.of(sheet).colorScheme.error,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                     ),
@@ -284,10 +287,33 @@ Future<void> showClipDetails(BuildContext context, HistoryItem item, SyncControl
                     label: const Text('Delete'),
                   ),
                 ),
+                if (canSave) ...[
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton.tonalIcon(
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size(0, 52),
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      ),
+                      onPressed: () async {
+                        Navigator.of(sheet).pop();
+                        final (:saved, :message) = await controller.saveToGallery(item);
+                        if (!context.mounted) return;
+                        showToast(context, message,
+                            icon: saved ? Icons.photo_library_outlined : Icons.error_outline_rounded,
+                            iconColor: saved ? Brand.success : Brand.warning);
+                      },
+                      icon: const Icon(Icons.download_rounded),
+                      label: const Text('Save'),
+                    ),
+                  ),
+                ],
                 const SizedBox(width: 12),
                 Expanded(
-                  flex: 2,
+                  flex: canSave ? 1 : 2,
                   child: FilledButton.icon(
+                    style: canSave ? FilledButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8)) : null,
                     onPressed: () async {
                       Navigator.of(sheet).pop();
                       await controller.copyToClipboard(item);

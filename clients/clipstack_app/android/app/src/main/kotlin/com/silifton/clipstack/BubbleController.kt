@@ -33,7 +33,7 @@ import kotlin.math.sin
  * apps" permission), Messenger chat-head style:
  *  - drag it anywhere; let go and it snaps to the nearest edge;
  *  - drag it onto the ✕ that appears at the bottom to dismiss it;
- *  - tap it and Send, Paste and Settings (icons only) fan out evenly around it.
+ *  - tap it and Send, Paste and Open app (icons only) fan out evenly around it.
  * A dot shows whether sync is connected. Hosted by [KeepAliveService], so it
  * exists exactly while sync is running.
  */
@@ -243,12 +243,12 @@ class BubbleController(private val context: Context) {
         targetCircle.animate().scaleX(0.6f).scaleY(0.6f).alpha(0f).setDuration(180).start()
     }
 
-    // MARK: - Menu: Send, Paste, Settings around the bubble
+    // MARK: - Menu: Send, Paste, Open app around the bubble
 
     private enum class Action(val label: String, val icon: Int) {
         SEND("Send", R.drawable.ic_bubble_send),
         PASTE("Paste", R.drawable.ic_bubble_paste),
-        SETTINGS("Settings", R.drawable.ic_bubble_settings),
+        OPEN("Open ClipStack", R.drawable.ic_bubble_open),
     }
 
     private fun openMenu() {
@@ -330,12 +330,9 @@ class BubbleController(private val context: Context) {
         when (action) {
             Action.SEND -> context.startActivity(ClipReaderActivity.intent(context))
             Action.PASTE -> paste()
-            Action.SETTINGS -> {
-                context.startActivity(
-                    Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                )
-                bridge.deliver(mapOf("kind" to "openSettings"))
-            }
+            Action.OPEN -> context.startActivity(
+                Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
         }
     }
 

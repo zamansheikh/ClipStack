@@ -46,6 +46,7 @@ class HistoryItem {
     required this.at,
     this.text,
     this.imagePath,
+    this.fingerprint,
     this.devicePlatform,
   });
 
@@ -53,6 +54,10 @@ class HistoryItem {
   final String kind;
   final String? text;
   final String? imagePath;
+
+  /// Identity of an image's bytes, to spot the same picture again; null for
+  /// text, and for images saved before history merged repeats.
+  final String? fingerprint;
 
   /// The other device: where it came from, or where it was sent.
   final String deviceName;
@@ -63,11 +68,31 @@ class HistoryItem {
   final bool incoming;
   final DateTime at;
 
+  bool get isImage => imagePath != null;
+
+  /// The same clip again: the same picture, or the same text (a link and
+  /// the same text copied plainly count as one, as on the Mac).
+  bool sameContent(HistoryItem other) {
+    if (isImage || other.isImage) return isImage && other.isImage && fingerprint != null && fingerprint == other.fingerprint;
+    return text == other.text;
+  }
+
+  /// [history] with [item] on top. An item with the same content moves up
+  /// as [item] (new time and device) instead of appearing twice. Returns
+  /// the new list and the items that left it, whose images can be deleted.
+  static ({List<HistoryItem> kept, List<HistoryItem> dropped}) add(List<HistoryItem> history, HistoryItem item,
+      {int limit = AppStorage.historyLimit}) {
+    final replaced = history.where((h) => h.id == item.id || h.sameContent(item)).toSet();
+    final all = [item, ...history.where((h) => !replaced.contains(h))];
+    return (kept: all.take(limit).toList(), dropped: [...replaced, ...all.skip(limit)]);
+  }
+
   Map<String, Object?> toJson() => {
         'id': id,
         'kind': kind,
         'text': text,
         'imagePath': imagePath,
+        'fingerprint': fingerprint,
         'deviceName': deviceName,
         'devicePlatform': devicePlatform,
         'incoming': incoming,
@@ -79,6 +104,7 @@ class HistoryItem {
         kind: json['kind'] as String,
         text: json['text'] as String?,
         imagePath: json['imagePath'] as String?,
+        fingerprint: json['fingerprint'] as String?,
         deviceName: json['deviceName'] as String,
         devicePlatform: json['devicePlatform'] as String?,
         incoming: json['incoming'] as bool,
