@@ -505,8 +505,10 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
     // One at a time, in order: a big image must not let a later text clip
     // finish first (wrong clipboard, lost history update).
     final subscription = session.clips.listen((clip) {
+      // A clip that can't be applied (a platform call that never answers)
+      // must not hold up every clip after it: give each one 30 s.
       _receiveChain = _receiveChain
-          .then((_) => _receive(peer, clip))
+          .then((_) => _receive(peer, clip).timeout(const Duration(seconds: 30)))
           .catchError((Object e) => debugPrint('ClipStack: applying a clip failed: $e'));
     });
     session.done.then((_) async {
@@ -599,7 +601,7 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
       default:
         final text = clip.text ?? '';
         await _markClipboardSynced(text);
-        await Clipboard.setData(ClipboardData(text: text));
+        await _writeClipboardText(text);
     }
     await _addHistory(HistoryItem(
       id: clip.id,
@@ -885,6 +887,14 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  /// Puts text on the clipboard. On Android through ClipStack's own bridge:
+  /// Flutter's Clipboard.setData is answered by a plugin that exists only
+  /// while the app's screen does. With the screen closed (swiped away) and the
+  /// service still syncing, that call never returned, and every clip after it
+  /// waited behind it: both phones showed Connected, the sender said Sent.
+  Future<void> _writeClipboardText(String text) =>
+      Platform.isAndroid ? native.setClipboardText(text) : Clipboard.setData(ClipboardData(text: text));
+
   /// Puts an image on the clipboard: Android through the native bridge
   /// (FileProvider), PCs through pasteboard. On a PC the next watcher read
   /// becomes the baseline, so a received image isn't sent back.
@@ -907,7 +917,7 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
       await _writeClipboardImage(await File(item.imagePath!).readAsBytes());
     } else {
       await _markClipboardSynced(item.text ?? '');
-      await Clipboard.setData(ClipboardData(text: item.text ?? ''));
+      await _writeClipboardText(item.text ?? '');
     }
   }
 

@@ -110,6 +110,13 @@ class NativeBridge(private val app: Application, engine: FlutterEngine) {
                 }
                 result.success(null)
             }
+            // Received text. Flutter's own Clipboard.setData goes to a plugin that
+            // exists only while MainActivity does; with the screen closed and the
+            // service still syncing it never answers, and the receive queue stalls.
+            "setClipboardText" -> {
+                ClipboardWriter.setText(app, call.argument<String>("text") ?: "")
+                result.success(null)
+            }
             "setClipboardImage" -> {
                 val png = call.argument<ByteArray>("png")
                 if (png == null) result.error("args", "png missing", null) else {

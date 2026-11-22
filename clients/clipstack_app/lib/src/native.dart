@@ -37,6 +37,7 @@ class NativeBridge {
   Future<void> updateKeepAlive(String text) => _call('updateKeepAlive', {'text': text});
   Future<void> stopKeepAlive() => _call('stopKeepAlive');
   Future<void> requestNotificationPermission() => _call('requestNotificationPermission');
+  Future<void> setClipboardText(String text) => _call('setClipboardText', {'text': text});
   Future<void> setClipboardImage(Uint8List png) => _call('setClipboardImage', {'png': png});
   Future<void> moveToBack() => _call('moveToBack');
 
